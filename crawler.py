@@ -5,7 +5,7 @@ def crawl(totalLevels, levels, passedUrl):
     totalDepth = int(totalLevels)
     depth = int(levels)
 
-    if(int(levels) > 0):
+    if(depth > 0 and not hasCrawled(urlStrip(passedUrl))):
         code = requests.get(passedUrl)
         s = BeautifulSoup(code.content, "html.parser")
 
@@ -13,10 +13,16 @@ def crawl(totalLevels, levels, passedUrl):
             href = str(link.get('href'))
             indent = ''
 
+            # If list already exists, append. Else, create
+            if (urlStrip(passedUrl) in urlList):
+                urlList[urlStrip(passedUrl)].append(href)
+            else:
+                urlList[urlStrip(passedUrl)] = [href]
+
             # Only if domain is not the same as the one passed into this method
-            if ('://' in href and not hasCrawled(href)):
+            if ('://' in href):
                 # Add line break at start of new branch
-                if (depth == totalDepth):
+                if (depth > 1):
                     print()
                 
                 # Handle formatting
@@ -30,23 +36,38 @@ def crawl(totalLevels, levels, passedUrl):
                 # Get domains on found domain if depth allows it
                 if (depth > 1):
                     crawl(totalDepth, depth - 1, href)
-                    urlList.append(urlStrip(href))
+
+    # If URL has already been crawled, use the previously stored URL's
+    if (depth > 0 and hasCrawled(urlStrip(passedUrl))):
+        for u in urlList[urlStrip(passedUrl)]:
+            indent = ''
+
+            if ('://' in u):
+                # Add line break at start of new branch
+                if (depth > 1):
+                    print()
+
+                # Handle formatting
+                for i in range(depth, totalDepth):
+                    indent += '     '
+                    i
+
+                # Print domain
+                print(indent + u)
+
+                # Get domains on listed domain if depth allows it
+                if (depth > 1):
+                    crawl(totalDepth, depth - 1, u)
+
 
 def hasCrawled(testUrl):
     check = urlStrip(testUrl)
 
     # Return True if URL has already been crawled
-    for u in urlList:
-        if (check == u):
-            return True
-        elif (u.endswith('/')):
-            if (check == u[:-1]):
-                return True
-        elif (check.endswith('/')):
-            if (check[:-1] == u):
-                return True
+    if (check in urlList):
+        return True
 
-    # Add URL to crawled list and return that it has not been crawled
+    # Return that it has not been crawled
     return False
 
 def urlStrip(url):
@@ -55,17 +76,22 @@ def urlStrip(url):
      # Remove http, https, and www to accurately compare URL's
     bareUrl = bareUrl.replace('http://', '')
     bareUrl = bareUrl.replace('https://', '')
+    bareUrl = bareUrl.replace('ftp://', '')
     bareUrl = bareUrl.replace('www.', '')
+
+    if (not bareUrl.endswith('/')):
+        bareUrl += '/'
 
     return bareUrl
 
 
-urlList = []
+
+# START MAIN CODE
+
+urlList = {}
 
 # Get user variables
 depth = input("How many levels deep should the crawler go?\n")
 url = input("What is the target URL?\n")
 
 crawl(depth, depth, url)
-
-print (urlList)
