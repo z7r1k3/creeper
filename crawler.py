@@ -30,7 +30,7 @@ def crawl(totalLevels, levels, ogUrl, passedUrl, output):
                     i
                 
                 # Print domain
-                display(indent + href, output, totalDepth == depth, depth, ogUrl)
+                display(indent + href.replace(' ', ''), output, totalDepth == depth, depth, ogUrl)
 
                 # Get domains on found domain if depth allows it
                 if (depth > 1 and getDomain(ogUrl) in href):
@@ -50,7 +50,7 @@ def crawl(totalLevels, levels, ogUrl, passedUrl, output):
                     i
 
                 # Print domain
-                display(indent + u, output, totalDepth == depth, depth, ogUrl)
+                display(indent + u.replace(' ', ''), output, totalDepth == depth, depth, ogUrl)
 
                 # Get domains on listed domain if depth allows it
                 if (depth > 1 and getDomain(ogUrl) in u):
