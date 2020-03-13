@@ -1,2 +1,2 @@
 # CyberClub-WebCrawler
- Web Crawler. For Cyber Club.
+A simple Web Crawler for a Python exercise in Cybersecurity Club
