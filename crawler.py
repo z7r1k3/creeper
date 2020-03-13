@@ -10,7 +10,7 @@ def web(totalLevels, levels, passedUrl):
         s = BeautifulSoup(code.content, "html.parser")
 
         for link in s.findAll('a'):
-            href = link.get('href')
+            href = str(link.get('href'))
             indent = ''
 
             # Only if domain is not the same as the one passed into this method
@@ -27,8 +27,9 @@ def web(totalLevels, levels, passedUrl):
                 # Print domain
                 print(indent + href)
 
-                # Get domains on found domain
-                web(totalDepth, depth - 1, href)
+                # Get domains on found domain if depth allows it
+                if (depth > 1):
+                    web(totalDepth, depth - 1, href)
 
 
 
