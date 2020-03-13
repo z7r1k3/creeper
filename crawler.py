@@ -1,7 +1,7 @@
 import requests
 from bs4 import BeautifulSoup
 
-def web(totalLevels, levels, passedUrl):
+def crawl(totalLevels, levels, passedUrl):
     totalDepth = int(totalLevels)
     depth = int(levels)
 
@@ -14,7 +14,7 @@ def web(totalLevels, levels, passedUrl):
             indent = ''
 
             # Only if domain is not the same as the one passed into this method
-            if (passedUrl not in href and 'http' in href):
+            if ('://' in href and not hasCrawled(href)):
                 # Add line break at start of new branch
                 if (depth == totalDepth):
                     print()
@@ -22,19 +22,50 @@ def web(totalLevels, levels, passedUrl):
                 # Handle formatting
                 for i in range(depth, totalDepth):
                     indent += '     '
-                    i += 1
+                    i
                 
                 # Print domain
                 print(indent + href)
 
                 # Get domains on found domain if depth allows it
                 if (depth > 1):
-                    web(totalDepth, depth - 1, href)
+                    crawl(totalDepth, depth - 1, href)
+                    urlList.append(urlStrip(href))
+
+def hasCrawled(testUrl):
+    check = urlStrip(testUrl)
+
+    # Return True if URL has already been crawled
+    for u in urlList:
+        if (check == u):
+            return True
+        elif (u.endswith('/')):
+            if (check == u[:-1]):
+                return True
+        elif (check.endswith('/')):
+            if (check[:-1] == u):
+                return True
+
+    # Add URL to crawled list and return that it has not been crawled
+    return False
+
+def urlStrip(url):
+    bareUrl = url
+
+     # Remove http, https, and www to accurately compare URL's
+    bareUrl = bareUrl.replace('http://', '')
+    bareUrl = bareUrl.replace('https://', '')
+    bareUrl = bareUrl.replace('www.', '')
+
+    return bareUrl
 
 
+urlList = []
 
 # Get user variables
 depth = input("How many levels deep should the crawler go?\n")
 url = input("What is the target URL?\n")
 
-web(depth, depth, url)
+crawl(depth, depth, url)
+
+print (urlList)
