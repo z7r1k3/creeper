@@ -5,6 +5,7 @@ def crawl(totalLevels, levels, ogUrl, passedUrl, output):
     totalDepth = totalLevels
     depth = levels
 
+    # If URL hasn't been crawled, crawl it
     if(depth > 0 and not hasCrawled(urlStrip(passedUrl))):
         if (not '://' in passedUrl and not passedUrl.startswith('/')):
             passedUrl = 'http://' + passedUrl
@@ -15,7 +16,7 @@ def crawl(totalLevels, levels, ogUrl, passedUrl, output):
             href = str(link.get('href'))
             indent = ''
 
-            # If list already exists, append. Else, create
+            # If URL list already exists, append. Else, create
             if (urlStrip(passedUrl) in urlList):
                 if (href not in urlList[urlStrip(passedUrl)]):
                     urlList[urlStrip(passedUrl)].append(href)
@@ -23,11 +24,15 @@ def crawl(totalLevels, levels, ogUrl, passedUrl, output):
                 urlList[urlStrip(passedUrl)] = [href]
 
             # Only if domain is not the same as the one passed into this method
-            if ('://' in href):                
+            if ('://' in href or href.startswith('/') and not href.startswith('//')):                
                 # Handle formatting
                 for i in range(depth, totalDepth):
                     indent += '     '
                     i
+
+                # Merge path with domain if the URL is missing domain
+                if (href.startswith('/')):
+                    href = str(mergeUrl(passedUrl, href))
                 
                 # Print domain
                 display(indent + href.replace(' ', ''), output, totalDepth == depth, depth, ogUrl)
@@ -43,11 +48,15 @@ def crawl(totalLevels, levels, ogUrl, passedUrl, output):
         for u in urlList[urlStrip(passedUrl)]:
             indent = ''
 
-            if ('://' in u):
+            if ('://' in u or u.startswith('/') and not u.startswith('//')):
                 # Handle formatting
                 for i in range(depth, totalDepth):
                     indent += '     '
                     i
+
+                # Merge path with domain if the URL is missing domain
+                if (u.startswith('/')):
+                    u = str(mergeUrl(passedUrl, u))
 
                 # Print domain
                 display(indent + u.replace(' ', ''), output, totalDepth == depth, depth, ogUrl)
@@ -79,6 +88,9 @@ def urlStrip(url):
     bareUrl = bareUrl.replace('ftp://', '')
     bareUrl = bareUrl.replace('www.', '')
 
+    if (bareUrl.startswith('//')):
+        bareUrl = bareUrl[+2:]
+
     if (not bareUrl.endswith('/')):
         bareUrl += '/'
 
@@ -101,15 +113,28 @@ def display(text, logCode, isRootUrl, depth, ogUrl):
 
 
 def getDomain(url):
-    index = urlStrip(url).find('/')
-
+    url = urlStrip(url)
+    index = url.find('/')
     return url[:index]
+
+def getPrefix(url):
+    index = url.find('//')
+    return url[:index+2]
+
+
+def mergeUrl(domain, path):
+    if (domain.endswith('/')):
+        return getPrefix(domain) + getDomain(domain) + path
+    else:
+        return getPrefix(domain) + getDomain(domain) + path
 
 
 # START MAIN CODE
 
-urlList = {}
 crawlList = {}
+urlList = {}
+#emailList = []
+#phoneList = []
 
 # Get user variables
 url = input("What is the target URL?\n")
