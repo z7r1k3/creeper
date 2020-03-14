@@ -123,10 +123,7 @@ def getPrefix(url):
 
 
 def mergeUrl(domain, path):
-    if (domain.endswith('/')):
-        return getPrefix(domain) + getDomain(domain) + path
-    else:
-        return getPrefix(domain) + getDomain(domain) + path
+    return getPrefix(domain) + getDomain(domain) + path
 
 
 # START MAIN CODE
