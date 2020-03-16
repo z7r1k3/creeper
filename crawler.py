@@ -28,7 +28,6 @@ def crawl(totalLevels, levels, ogUrl, passedUrl, output):
                 # Handle formatting
                 for i in range(depth, totalDepth):
                     indent += '     '
-                    i
 
                 # Merge path with domain if the URL is missing domain
                 if (href.startswith('/')):
@@ -52,7 +51,6 @@ def crawl(totalLevels, levels, ogUrl, passedUrl, output):
                 # Handle formatting
                 for i in range(depth, totalDepth):
                     indent += '     '
-                    i
 
                 # Merge path with domain if the URL is missing domain
                 if (u.startswith('/')):
