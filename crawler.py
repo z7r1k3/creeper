@@ -1,20 +1,16 @@
 import requests
 from bs4 import BeautifulSoup
 
-def crawl(totalLevels, levels, ogUrl, passedUrl, output):
-    totalDepth = totalLevels
-    depth = levels
+def crawl(totalDepth, depth, ogUrl, passedUrl, logCode):        
 
-    # If URL hasn't been crawled, crawl it
-    if(depth > 0 and not hasCrawled(urlStrip(passedUrl))):
+    if (depth > 0 and not hasCrawled(urlStrip(passedUrl))): # If URL hasn't been crawled, crawl it
         if (not '://' in passedUrl and not passedUrl.startswith('/')):
             passedUrl = 'http://' + passedUrl
         code = requests.get(passedUrl)
-        s = BeautifulSoup(code.content, "html.parser")
+        s = BeautifulSoup(code.content, 'html.parser')
 
         for link in s.findAll('a'):
             href = str(link.get('href'))
-            indent = ''
 
             # If URL list already exists, append. Else, create
             if (urlStrip(passedUrl) in urlList):
@@ -23,47 +19,27 @@ def crawl(totalLevels, levels, ogUrl, passedUrl, output):
             else:
                 urlList[urlStrip(passedUrl)] = [href]
 
-            # Only if domain is not the same as the one passed into this method
-            if ('://' in href or href.startswith('/') and not href.startswith('//')):                
-                # Handle formatting
-                for i in range(depth, totalDepth):
-                    indent += '     '
-
-                # Merge path with domain if the URL is missing domain
-                if (href.startswith('/')):
-                    href = str(mergeUrl(passedUrl, href))
-                
+            # Only if link is crawlable
+            if (isQualifiedLink(href)):                
                 # Print domain
-                display(indent + href.replace(' ', ''), output, totalDepth == depth, depth, ogUrl)
+                display(href, logCode, totalDepth, depth, ogUrl)
 
-                # Get domains on found domain if depth allows it
-                if (depth > 1 and getDomain(ogUrl) in href):
-                    crawl(totalDepth, depth - 1, ogUrl, href, output)
+                # Crawl found link if depth allows it, and link is on entered domain
+                if (depth > 1 and urlStrip(href).startswith(getDomain(ogUrl)) and urlStrip(href) != urlStrip(ogUrl)):
+                    crawl(totalDepth, depth - 1, ogUrl, href, logCode)
         
         crawlList[urlStrip(passedUrl)] = True
-
-    # If URL has already been crawled, use the previously stored URL's
-    if (depth > 0 and hasCrawled(urlStrip(passedUrl))):
+    elif (depth > 0): # If URL has already been crawled, use the previously stored URL's
         for u in urlList[urlStrip(passedUrl)]:
-            indent = ''
 
-            if ('://' in u or u.startswith('/') and not u.startswith('//')):
-                # Handle formatting
-                for i in range(depth, totalDepth):
-                    indent += '     '
-
-                # Merge path with domain if the URL is missing domain
-                if (u.startswith('/')):
-                    u = str(mergeUrl(passedUrl, u))
-
+            # Only if link is crawlable
+            if (isQualifiedLink(u)):
                 # Print domain
-                display(indent + u.replace(' ', ''), output, totalDepth == depth, depth, ogUrl)
+                display(u, logCode, totalDepth, depth, ogUrl)
 
-                # Get domains on listed domain if depth allows it
-                if (depth > 1 and getDomain(ogUrl) in u):
-                    crawl(totalDepth, depth - 1, ogUrl, u, output)
-
-        crawlList[urlStrip(passedUrl)] = True
+                # Crawl found link if depth allows it, and link is on entered domain
+                if (depth > 1 and urlStrip(u).startswith(getDomain(ogUrl)) and urlStrip(u) != urlStrip(ogUrl)):
+                    crawl(totalDepth, depth - 1, ogUrl, u, logCode)
 
 
 def hasCrawled(testUrl):
@@ -95,7 +71,18 @@ def urlStrip(url):
     return bareUrl
 
 
-def display(text, logCode, isRootUrl, depth, ogUrl):
+def display(text, logCode, totalDepth, depth, ogUrl):
+    isRootUrl = (totalDepth == depth) and (urlStrip(text) != urlStrip(ogUrl))
+    indent = ''
+
+    # Handle formatting
+    for i in range(depth, totalDepth):
+        indent += '     '
+
+    # Merge path with domain if the URL is missing domain
+    if ('://' not in text):
+        text = str(mergeUrl(ogUrl, text))
+    
     switch = {
         0: isRootUrl,
         1: True
@@ -105,9 +92,9 @@ def display(text, logCode, isRootUrl, depth, ogUrl):
         print()
 
     if (switch[logCode] and isRootUrl and getDomain(ogUrl) in text):
-        print(text + " | Crawling...")
+        print(indent + text.replace(' ', '') + " | Crawling...")
     elif (switch[logCode]):
-        print(text)
+        print(indent + text.replace(' ', ''))
 
 
 def getDomain(url):
@@ -121,7 +108,16 @@ def getPrefix(url):
 
 
 def mergeUrl(domain, path):
-    return getPrefix(domain) + getDomain(domain) + path
+    if (path.startswith('/')):
+        return getPrefix(domain) + getDomain(domain) + path
+    else:
+        return getPrefix(domain) + getDomain(domain) + '/' + path
+
+def isQualifiedLink(href): # Not mailto etc.
+    if (('://' in href or ':' not in href) and not (href.startswith('//') or '#' in href)):
+        return True
+    else:
+        return False
 
 
 # START MAIN CODE
@@ -132,10 +128,11 @@ urlList = {}
 #phoneList = []
 
 # Get user variables
-url = input("What is the target URL?\n")
-depth = int(input("How many levels deep should the crawler go?\n"))
-log = int(input("""Please select a logging option:
-0: Display root URL's
-1: Display all URL's\n"""))
+url = input('What is the target URL?\n')
+depth = int(input('How many levels deep should the crawler go?\n'))
+log = int(input('''Please select a logging option:
+0: Display root URL\'s
+1: Display all URL\'s\n'''))
 
+print('Crawling ' + url + '...\n\n')
 crawl(depth, depth, url, url, log)
