@@ -1,3 +1,4 @@
+import re
 import requests
 from bs4 import BeautifulSoup
 
@@ -6,7 +7,7 @@ from bs4 import BeautifulSoup
 def crawl(totalDepth, depth, ogUrl, passedUrl, logCode):
 
     if (depth > 0 and not hasCrawled(urlStrip(passedUrl))): # If URL hasn't been crawled, crawl it
-        if (not '://' in passedUrl and not passedUrl.startswith('/')):
+        if (not '://' in passedUrl): # Only applies to first inputted link, as all others get prefixed from here on out
             passedUrl = 'http://' + passedUrl
         code = requests.get(passedUrl)
         s = BeautifulSoup(code.content, 'html.parser')
@@ -21,11 +22,16 @@ def crawl(totalDepth, depth, ogUrl, passedUrl, logCode):
             else:
                 urlList[urlStrip(passedUrl)] = [href]
 
-            # Only if link is crawlable
-            if (isQualifiedLink(href)):                
-                # Print domain
-                display(href, logCode, totalDepth, depth, ogUrl)
 
+            # Merge path with domain if the URL is missing domain
+            if (not urlStrip(href).startswith(getDomain(ogUrl))):
+                href = str(mergeUrl(passedUrl, href))
+            
+            # Print domain
+            display(href, logCode, totalDepth, depth, ogUrl)
+
+            # Only if link is crawlable
+            if (isQualifiedLink(href)):
                 # Crawl found link if depth allows it, and link is on entered domain
                 if (depth > 1 and urlStrip(href).startswith(getDomain(ogUrl)) and urlStrip(href) != urlStrip(ogUrl)):
                     crawl(totalDepth, depth - 1, ogUrl, href, logCode)
@@ -44,15 +50,14 @@ def crawl(totalDepth, depth, ogUrl, passedUrl, logCode):
                     crawl(totalDepth, depth - 1, ogUrl, u, logCode)
 
 
+# def scrape()
+
+
 def hasCrawled(testUrl):
     check = urlStrip(testUrl)
 
     # Return True if URL has already been crawled
-    if (check in crawlList and check in urlList):
-        return True
-
-    # Return that it has not been crawled
-    return False
+    return (check in crawlList and check in urlList)
 
 
 def urlStrip(url):
@@ -63,6 +68,7 @@ def urlStrip(url):
     bareUrl = bareUrl.replace('https://', '')
     bareUrl = bareUrl.replace('ftp://', '')
     bareUrl = bareUrl.replace('www.', '')
+    bareUrl = bareUrl.replace(' ', '')
 
     if (bareUrl.startswith('//')):
         bareUrl = bareUrl[+2:]
@@ -80,10 +86,6 @@ def display(text, logCode, totalDepth, depth, ogUrl):
     # Handle formatting
     for i in range(depth, totalDepth):
         indent += '     '
-
-    # Merge path with domain if the URL is missing domain
-    if ('://' not in text):
-        text = str(mergeUrl(ogUrl, text))
     
     switch = {
         0: isRootUrl,
@@ -94,9 +96,9 @@ def display(text, logCode, totalDepth, depth, ogUrl):
         print()
 
     if (switch[logCode] and isRootUrl and getDomain(ogUrl) in text):
-        print(indent + text.replace(' ', '') + " | Crawling...")
+        print(indent + text + " | Crawling...")
     elif (switch[logCode]):
-        print(indent + text.replace(' ', ''))
+        print(indent + text)
 
 
 def getDomain(url):
@@ -111,15 +113,16 @@ def getPrefix(url):
 
 def mergeUrl(domain, path):
     if (path.startswith('/')):
-        return getPrefix(domain) + getDomain(domain) + path
-    else:
-        return getPrefix(domain) + getDomain(domain) + '/' + path
+        return getPrefix(domain) + urlStrip(domain) + path[+1:]
+    
+    return getPrefix(domain) + urlStrip(domain) + path
 
 def isQualifiedLink(href): # Not mailto etc.
-    if (('://' in href or ':' not in href) and not (href.startswith('//') or '#' in href)):
+    if (('://' in href or ':' not in href) and not '#' in href):
         return True
     else:
         return False
+
 
 
 # START MAIN CODE
