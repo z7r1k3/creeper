@@ -1,9 +1,9 @@
 import requests
 from bs4 import BeautifulSoup
 
-def crawl(totalLevels, levels, ogUrl, passedUrl, output):
-    totalDepth = totalLevels
-    depth = levels
+ # Just to clarify, totalDepth is the total jumps allowed from the starting URL
+ # depth
+def crawl(totalDepth, depth, ogUrl, passedUrl, output):
 
     # If URL hasn't been crawled, crawl it
     if(depth > 0 and not hasCrawled(urlStrip(passedUrl))):
