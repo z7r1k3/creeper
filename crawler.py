@@ -2,6 +2,13 @@ import re
 import requests
 from bs4 import BeautifulSoup
 
+# var squad
+fileEndings = ['.html','.asp','.php','.htm']
+crawlList = {}
+urlList = {}
+#emailList = []
+#phoneList = []
+
  # Just to clarify, totalDepth is the total jumps allowed from the starting URL
  # depth
 def crawl(totalDepth, depth, ogUrl, passedUrl, logCode):
@@ -95,7 +102,7 @@ def display(text, logCode, totalDepth, depth, ogUrl):
     if (switch[logCode] and depth > 1):
         print()
 
-    if (switch[logCode] and isRootUrl and getDomain(ogUrl) in text):
+    if (switch[logCode] and isRootUrl and getDomain(ogUrl) in text and isQualifiedLink(text)):
         print(indent + text + " | Crawling...")
     elif (switch[logCode]):
         print(indent + text)
@@ -114,23 +121,24 @@ def getPrefix(url):
 def mergeUrl(domain, path):
     if (path.startswith('/')):
         return getPrefix(domain) + urlStrip(domain) + path[+1:]
-    
     return getPrefix(domain) + urlStrip(domain) + path
 
+# Make sure it isn't a mp3, json, png, jpg... Make sure it is a html, asp, php, ftp file without ending
 def isQualifiedLink(href): # Not mailto etc.
-    if (('://' in href or ':' not in href) and not '#' in href):
-        return True
-    else:
-        return False
+    if (':' in href and not '://' in href): return False # If it has a : but no ://
+    if (href.startswith('#')): return False         # false if it starts with << those things.
+    if (href.endswith('../')): return False # FTP back links
 
+    if (href.endswith('/')): href = href[:-1] # Remove trailing / for accurate extension comparison
+
+    if ('.' in urlStrip(href).replace(getDomain(href), '')):
+        for ending in fileEndings:
+            if (href.endswith(ending)): return True
+        return False
+    return True
 
 
 # START MAIN CODE
-
-crawlList = {}
-urlList = {}
-#emailList = []
-#phoneList = []
 
 # Get user variables
 url = input('What is the target URL?\n')
