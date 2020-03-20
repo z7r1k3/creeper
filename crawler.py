@@ -1,7 +1,9 @@
 import requests
 from bs4 import BeautifulSoup
 
-def crawl(totalDepth, depth, ogUrl, passedUrl, logCode):        
+ # Just to clarify, totalDepth is the total jumps allowed from the starting URL
+ # depth
+def crawl(totalDepth, depth, ogUrl, passedUrl, logCode):
 
     if (depth > 0 and not hasCrawled(urlStrip(passedUrl))): # If URL hasn't been crawled, crawl it
         if (not '://' in passedUrl and not passedUrl.startswith('/')):
@@ -134,5 +136,5 @@ log = int(input('''Please select a logging option:
 0: Display root URL\'s
 1: Display all URL\'s\n'''))
 
-print('Crawling ' + url + '...\n\n')
+print('\n\nCrawling ' + url + '...\n')
 crawl(depth, depth, url, url, log)
