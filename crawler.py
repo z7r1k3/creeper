@@ -1,6 +1,9 @@
 import requests
 from bs4 import BeautifulSoup
 
+# var squad
+fileEndings = ['.html','.asp','.php','.htm']
+
  # Just to clarify, totalDepth is the total jumps allowed from the starting URL
  # depth
 def crawl(totalDepth, depth, ogUrl, passedUrl, logCode):
@@ -112,14 +115,17 @@ def getPrefix(url):
 def mergeUrl(domain, path):
     if (path.startswith('/')):
         return getPrefix(domain) + getDomain(domain) + path
-    else:
-        return getPrefix(domain) + getDomain(domain) + '/' + path
+    return getPrefix(domain) + getDomain(domain) + '/' + path
 
+
+# Make sure it isn't a mp3, json, png, jpg... Make sure it is a html, asp, php, ftp file without ending
 def isQualifiedLink(href): # Not mailto etc.
-    if (('://' in href or ':' not in href) and not (href.startswith('//') or '#' in href)):
-        return True
-    else:
-        return False
+    if(href.startswith('//') or href.startswith('#')): return False         # false if it starts with << those things.
+    for ending in fileEndings:
+        if(href.endswith(ending)): return True
+    # add support for FTP links
+    return False
+    
 
 
 # START MAIN CODE
