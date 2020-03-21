@@ -1,4 +1,5 @@
 import re
+import urllib.request
 import requests
 from bs4 import BeautifulSoup
 
@@ -12,26 +13,40 @@ urlList = {}
  # Just to clarify, totalDepth is the total jumps allowed from the starting URL
  # depth
 def crawl(totalDepth, depth, ogUrl, passedUrl, logCode):
+    isFtp = False
 
     if (depth > 0 and not hasCrawled(urlStrip(passedUrl))): # If URL hasn't been crawled, crawl it
         if (not '://' in passedUrl): # Only applies to first inputted link, as all others get prefixed from here on out
             passedUrl = 'http://' + passedUrl
-        code = requests.get(passedUrl)
-        s = BeautifulSoup(code.content, 'html.parser')
 
-        for link in s.findAll('a'):
-            href = str(link.get('href'))
+        if (not (passedUrl.startswith('ftp://') or passedUrl.startswith('ftps://'))):
+            code = requests.get(passedUrl)
+            s = BeautifulSoup(code.content, 'html.parser')
+        else:
+            try:
+                code = urllib.request.urlopen(passedUrl).read()
+            except:
+                print("ERROR: Unable to crawl")
+                code = ''
+            s = BeautifulSoup(code, features='lxml')
+            s = ftpParse(s)
+            isFtp = True        
+
+        for link in getLink(s, isFtp):
+            if (not isFtp):
+                href = str(link.get('href'))
+            else:
+                href = link
 
             # If URL list already exists, append. Else, create
-            if (urlStrip(passedUrl) in urlList):
-                if (href not in urlList[urlStrip(passedUrl)]):
-                    urlList[urlStrip(passedUrl)].append(href)
+            if ((urlStrip(passedUrl) in urlList) and (href not in urlList[urlStrip(passedUrl)])): # If passedUrl is in urlList, and href is not an item in the urlList[passedUrl] list (two dimensional)
+                urlList[urlStrip(passedUrl)].append(href)
             else:
                 urlList[urlStrip(passedUrl)] = [href]
 
 
             # Merge path with domain if the URL is missing domain
-            if (not urlStrip(href).startswith(getDomain(ogUrl))):
+            if (not (urlStrip(href).startswith(getDomain(ogUrl)) or '://' in href)):
                 href = str(mergeUrl(passedUrl, href))
             
             # Print domain
@@ -74,6 +89,7 @@ def urlStrip(url):
     bareUrl = bareUrl.replace('http://', '')
     bareUrl = bareUrl.replace('https://', '')
     bareUrl = bareUrl.replace('ftp://', '')
+    bareUrl = bareUrl.replace('ftps://', '')
     bareUrl = bareUrl.replace('www.', '')
     bareUrl = bareUrl.replace(' ', '')
 
@@ -103,9 +119,9 @@ def display(text, logCode, totalDepth, depth, ogUrl):
         print()
 
     if (switch[logCode] and isRootUrl and getDomain(ogUrl) in text and isQualifiedLink(text)):
-        print(indent + text + " | Crawling...")
+        print(indent + text.replace(' ', '') + " | Crawling...")
     elif (switch[logCode]):
-        print(indent + text)
+        print(indent + text.replace(' ', ''))
 
 
 def getDomain(url):
@@ -136,6 +152,44 @@ def isQualifiedLink(href): # Not mailto etc.
             if (href.endswith(ending)): return True
         return False
     return True
+
+
+def ftpParse(soup):
+    lines = str(soup).splitlines()
+    items = []
+    paths = []
+    
+    for i in range(0, len(lines)):
+        for u in lines[i].split(' '):
+            if (i in items and u.replace(' ', '') != ''):
+                items[i].append(u)
+            elif (u.replace(' ', '') != ''):
+                items.append(i)
+                items[i] = [u]
+
+    for i in range (0, len(items)-1):
+        index = 8
+        string = ''
+        if (re.search('[0-9]', items[i][0])):
+            index = 7
+        
+        paths.append(i)
+        
+        for j in range(index, len(items[i])):
+            string += items[i][j]
+            if (index < len(items[i])-1 and j < len(items[i])-1):
+                string += '%20'
+        
+        paths[i] = string
+            
+    return paths
+
+
+def getLink(soup, isFtp):
+    if (not isFtp):
+        return soup.findAll('a')
+    
+    return soup
 
 
 # START MAIN CODE
