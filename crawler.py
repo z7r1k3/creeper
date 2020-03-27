@@ -5,6 +5,7 @@ from bs4 import BeautifulSoup
 
 # var squad
 fileEndings = ['.html','.asp','.php','.htm']
+stripText = ['http://', 'https://', 'ftp://', 'ftps://', 'www.', ' ']
 crawlList = {}
 urlList = {}
 #emailList = []
@@ -85,13 +86,9 @@ def hasCrawled(testUrl):
 def urlStrip(url):
     bareUrl = url
 
-     # Remove http, https, and www to accurately compare URL's
-    bareUrl = bareUrl.replace('http://', '')
-    bareUrl = bareUrl.replace('https://', '')
-    bareUrl = bareUrl.replace('ftp://', '')
-    bareUrl = bareUrl.replace('ftps://', '')
-    bareUrl = bareUrl.replace('www.', '')
-    bareUrl = bareUrl.replace(' ', '')
+    # Remove http, https, and www to accurately compare URL's
+    for u in stripText:
+        bareUrl = bareUrl.replace (u, '')
 
     if (bareUrl.startswith('//')):
         bareUrl = bareUrl[+2:]
@@ -142,14 +139,16 @@ def mergeUrl(domain, path):
 # Make sure it isn't a mp3, json, png, jpg... Make sure it is a html, asp, php, ftp file without ending
 def isQualifiedLink(href): # Not mailto etc.
     if (':' in href and not '://' in href): return False # If it has a : but no ://
-    if (href.startswith('#')): return False         # false if it starts with << those things.
+    if (href == '#'): return False
     if (href.endswith('../')): return False # FTP back links
+    if (href.endswith('/LICENSE') or href.endswith('/LICENSE/')): return False
 
     if (href.endswith('/')): href = href[:-1] # Remove trailing / for accurate extension comparison
 
     if ('.' in urlStrip(href).replace(getDomain(href), '')):
         for ending in fileEndings:
-            if (href.endswith(ending)): return True
+            if (href.endswith(ending) and not (href.startswith('ftp://') or href.startswith('ftps://'))): # If it has a webpage file ending, and it's not on an ftp server
+                return True
         return False
     return True
 
@@ -158,26 +157,27 @@ def ftpParse(soup):
     lines = str(soup).splitlines()
     items = []
     paths = []
-    
-    for i in range(0, len(lines)):
-        for u in lines[i].split(' '):
-            if (i in items and u.replace(' ', '') != ''):
-                items[i].append(u)
-            elif (u.replace(' ', '') != ''):
-                items.append(i)
-                items[i] = [u]
+    index = 0
 
-    for i in range (0, len(items)-1):
-        index = 8
+    for line in lines: # Get each individual line
+        for value in line.split(' '): # Separate values on each line by whitespace
+            if ((len(items) == index + 1) and value.replace(' ', '') != ''): # If it already exists, append. If it's just whitespace, don't worry about it
+                items[index].append(value)
+            elif (value.replace(' ', '') != ''): # Doesn't already exist, so create
+                items.append(index)
+                items[index] = [value]
+        if (len(items) > index): index += 1 # len(items) > index protects against index out of bounds, in the event a wrong file is crawled and the outcome is unpredictable
+
+    offset = 8 # This is used to ignore all the crap we parsed above and just get the url path
+
+    for i in range(0, len(items)): # For each item in items, but give me an index number to work with (i)
         string = ''
-        if (re.search('[0-9]', items[i][0])):
-            index = 7
         
         paths.append(i)
         
-        for j in range(index, len(items[i])):
+        for j in range(offset, len(items[i])): # Parsing paths from items, and converting them into URL's
             string += items[i][j]
-            if (index < len(items[i])-1 and j < len(items[i])-1):
+            if (offset < len(items[i])-1 and j < len(items[i])-1):
                 string += '%20'
         
         paths[i] = string
@@ -186,10 +186,11 @@ def ftpParse(soup):
 
 
 def getLink(soup, isFtp):
-    if (not isFtp):
+    if (not isFtp): # If it is not an FTP link, bs can parse for the <a> tags
         return soup.findAll('a')
     
     return soup
+    
 
 
 # START MAIN CODE
