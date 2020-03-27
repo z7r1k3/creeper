@@ -196,11 +196,12 @@ def getLink(soup, isFtp):
 # START MAIN CODE
 
 # Get user variables
-url = input('What is the target URL?\n')
-depth = int(input('How many levels deep should the crawler go?\n'))
-log = int(input('''Please select a logging option:
+url = input('\nPlease enter the target URL(s), separated by spaces:\n').split(' ')
+depth = int(input('\nPlease enter how many levels deep the crawler should go:\n'))
+log = int(input('''\nPlease select a logging option:
 0: Display root URL\'s
 1: Display all URL\'s\n'''))
 
-print('\n\nCrawling ' + url + '...\n')
-crawl(depth, depth, url, url, log)
+for link in url: # Crawl for each URL the user inputs
+    print('\n\n\nCrawling ' + link + '...\n')
+    crawl(depth, depth, link, link, log)
