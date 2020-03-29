@@ -1,3 +1,8 @@
 **/.vscode
 venv/
 WebCrawler_Workspace.*
+
+# Specifically ignoring these folders in case we want to add something else in logs/
+logs/url/*
+logs/email/*
+logs/phone/*
