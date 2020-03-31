@@ -1,4 +1,4 @@
-# Version 1.0.0
+# Version 1.0.1
 import datetime
 import re
 import urllib.request
@@ -29,8 +29,12 @@ def crawl(totalDepth, depth, ogUrl, passedUrl, logCode):
             passedUrl = 'http://' + passedUrl
 
         if (not (passedUrl.startswith('ftp://') or passedUrl.startswith('ftps://'))): # If not FTP
-            code = requests.get(passedUrl)
-            s = BeautifulSoup(code.content, 'html.parser')
+            try:
+                code = requests.get(passedUrl)
+                s = BeautifulSoup(code.content, 'html.parser')
+            except:
+                print("ERROR: Unable to crawl")
+                s = BeautifulSoup('', 'html.parser')
         else: # If is FTP
             try:
                 code = urllib.request.urlopen(passedUrl).read()
@@ -62,7 +66,7 @@ def crawl(totalDepth, depth, ogUrl, passedUrl, logCode):
             # If URL list already exists, append. Else, create
             if ((urlStrip(passedUrl) in urlList) and (href not in urlList[urlStrip(passedUrl)])): # If passedUrl is in urlList, and href is not an item in the urlList[passedUrl] list (two dimensional)
                 urlList[urlStrip(passedUrl)].append(href)
-            else:
+            elif (urlStrip(passedUrl) not in urlList): # Else if passedUrl is not in urlList
                 urlList[urlStrip(passedUrl)] = [href]
             
             # Print domain
@@ -89,6 +93,7 @@ def crawl(totalDepth, depth, ogUrl, passedUrl, logCode):
                     phoneLog.write(href + '\n')
         
         crawlList[urlStrip(passedUrl)] = True
+
     elif (depth > 0): # If URL has already been crawled, use the previously stored URL's
         for u in urlList[urlStrip(passedUrl)]:
 
@@ -150,7 +155,7 @@ def display(text, logCode, totalDepth, depth, ogUrl):
 
 
 def getDomain(url):
-    url = urlStrip(url)
+    url = urlStrip(url) + '/'
     index = url.find('/')
     return url[:index]
 
