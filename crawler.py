@@ -33,7 +33,7 @@ def crawl(totalDepth, depth, ogUrl, passedUrl, logCode):
             if (log > 0): print("ERROR-1: Unable to crawl")
             code = ''
         
-        if (not (passedUrl.startswith('ftp://') or passedUrl.startswith('ftps://')) or isWebFile(passedUrl)):
+        if (not (passedUrl.startswith('ftp://') or passedUrl.startswith('ftps://')) or isWebFile(passedUrl)): # If not FTP or, if it is, it must be a webfile
             s = BeautifulSoup(code, 'html.parser')
         else:
             s = BeautifulSoup(code, features='lxml')
