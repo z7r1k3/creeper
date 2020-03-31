@@ -1,8 +1,7 @@
-# Version 1.0.1
+# Version 1.0.2
 import datetime
 import re
 import urllib.request
-import requests
 from bs4 import BeautifulSoup
 
 # var squad
@@ -28,26 +27,18 @@ def crawl(totalDepth, depth, ogUrl, passedUrl, logCode):
         if (not '://' in passedUrl): # Only applies to first inputted link, as all others get prefixed from here on out
             passedUrl = 'http://' + passedUrl
 
-        if (not (passedUrl.startswith('ftp://') or passedUrl.startswith('ftps://'))): # If not FTP
-            try:
-                code = requests.get(passedUrl)
-                s = BeautifulSoup(code.content, 'html.parser')
-            except:
-                if (log > 0): print("ERROR-1: Unable to crawl")
-                s = BeautifulSoup('', 'html.parser')
-        else: # If is FTP
-            try:
-                code = urllib.request.urlopen(passedUrl).read()
-            except:
-                if (log > 0): print("ERROR-1: Unable to crawl")
-                code = ''
-            
-            if (isWebFile(passedUrl)):
-                s = BeautifulSoup(code, 'html.parser')
-            else:
-                s = BeautifulSoup(code, features='lxml')
-                s = ftpParse(s)
-                isFtpNonWeb = True        
+        try:
+            code = urllib.request.urlopen(passedUrl).read()
+        except:
+            if (log > 0): print("ERROR-1: Unable to crawl")
+            code = ''
+        
+        if (not (passedUrl.startswith('ftp://') or passedUrl.startswith('ftps://')) or isWebFile(passedUrl)):
+            s = BeautifulSoup(code, 'html.parser')
+        else:
+            s = BeautifulSoup(code, features='lxml')
+            s = ftpParse(s)
+            isFtpNonWeb = True        
 
         for link in getLink(s, isFtpNonWeb):
             if (not isFtpNonWeb): # Is a crawlable web file, FTP or otherwise
