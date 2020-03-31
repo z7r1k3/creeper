@@ -33,13 +33,13 @@ def crawl(totalDepth, depth, ogUrl, passedUrl, logCode):
                 code = requests.get(passedUrl)
                 s = BeautifulSoup(code.content, 'html.parser')
             except:
-                print("ERROR: Unable to crawl")
+                if (log > 0): print("ERROR-1: Unable to crawl")
                 s = BeautifulSoup('', 'html.parser')
         else: # If is FTP
             try:
                 code = urllib.request.urlopen(passedUrl).read()
             except:
-                print("ERROR: Unable to crawl")
+                if (log > 0): print("ERROR-1: Unable to crawl")
                 code = ''
             
             if (isWebFile(passedUrl)):
@@ -189,7 +189,7 @@ def mergeUrl(domain, path):
         try:
             domain = getPrefix(domain) + urlStrip(domain)[:urlStrip(domain).rindex('/')] # Remove everything after new last '/', essentially going back a folder
         except:
-            print('ERROR: Too many back links')
+            if (log > 0): print('ERROR-2: Too many back links')
         # urlStrip ensures the '/' in the prefix (i.e. 'http://') doesn't get counted
 
     if (not domain == getPrefix(domain)): # If domain is more than just a prefix like http://
