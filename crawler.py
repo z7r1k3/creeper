@@ -322,7 +322,7 @@ if (save):
         
 # Begin crawling/scraping
 for link in url: # Crawl for each URL the user inputs
-    print('\n\n\nCrawling ' + link + '...\n')
+    print('\n\n\nCrawling ' + link + '\n')
     crawl(depth, depth, link, link, log)
 
 if (scrape and log > 0):
