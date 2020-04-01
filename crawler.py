@@ -1,4 +1,4 @@
-# Version 1.0.2
+# Version 1.0.3
 import datetime
 import re
 import urllib.request
@@ -139,10 +139,10 @@ def display(text, logCode, totalDepth, depth, ogUrl):
 
         if (switch[logCode] and isRootUrl and getDomain(ogUrl) in text and isQualifiedLink(text)):
             print(indent + text.replace(' ', '') + " | Crawling...")
-            if (save): urlLog.write(indent + text.replace(' ', '') + '\n')
         elif (switch[logCode]):
             print(indent + text.replace(' ', ''))
-            if (save): urlLog.write(indent + text.replace(' ', '') + '\n')
+        
+        if (save): urlLog.write(indent + text.replace(' ', '') + '\n')
 
 
 def getDomain(url):
