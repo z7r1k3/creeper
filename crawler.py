@@ -290,6 +290,7 @@ Please select a logging display option:
 2: Verbose
 '''))
 
+# Create timestamp for log files
 now = str(datetime.datetime.now())
 
 now = re.split(' |:', now[:now.rindex('.')])
