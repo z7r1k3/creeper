@@ -1,4 +1,4 @@
-# Version 1.0.4
+# Version 1.0.5
 import datetime
 import re
 import urllib.request
@@ -20,7 +20,7 @@ emailLog = None
 phoneLog = None
 
  # Just to clarify, totalDepth is the total jumps allowed from the starting URL
-def crawl(totalDepth, depth, ogUrl, passedUrl, logCode):
+def crawl(totalDepth, depth, ogUrl, passedUrl, logCode): # Crawl passed URL
     isFtpNonWeb = False # Is an FTP link, but not a web file (html, etc.)
 
     if (depth > 0 and not hasCrawled(urlStrip(passedUrl))): # If URL hasn't been crawled, crawl it
@@ -37,7 +37,6 @@ def crawl(totalDepth, depth, ogUrl, passedUrl, logCode):
             s = BeautifulSoup(code, 'html.parser')
         else:
             s = BeautifulSoup(code, features='lxml')
-            s = ftpParse(s)
             isFtpNonWeb = True        
 
         for link in getLink(s, isFtpNonWeb):
@@ -98,15 +97,14 @@ def crawl(totalDepth, depth, ogUrl, passedUrl, logCode):
                     crawl(totalDepth, depth - 1, ogUrl, u, logCode)
 
 
-def hasCrawled(testUrl):
+def hasCrawled(testUrl): # Return if the test URL has been crawled or not (boolean)
     check = urlStrip(testUrl)
 
     # Return True if URL has already been crawled
     return (check in crawlList and check in urlList)
 
 
-def urlStrip(bareUrl):
-    # Remove http, https, www, etc. to accurately compare URL's
+def urlStrip(bareUrl): # Returns the bare URL after removing http, https, www, etc. (i.e. 'example.org' instead of 'http://www.example.org')
     for u in stripText:
         bareUrl = bareUrl.replace (u, '')
 
@@ -119,7 +117,7 @@ def urlStrip(bareUrl):
     return bareUrl
 
 
-def display(text, logCode, totalDepth, depth, ogUrl):
+def display(text, logCode, totalDepth, depth, ogUrl): # If it's a URL, and the log code allows it, format and display the passed text to the console
     isRootUrl = (totalDepth == depth) and (urlStrip(text) != urlStrip(ogUrl))
     indent = ''
 
@@ -137,7 +135,7 @@ def display(text, logCode, totalDepth, depth, ogUrl):
         if (switch[logCode] and depth > 1):
             print()
 
-        if (switch[logCode] and isRootUrl and getDomain(ogUrl) in text and isQualifiedLink(text)):
+        if (switch[logCode] and isRootUrl and urlStrip(text).startswith(getDomain(ogUrl)) and isQualifiedLink(text)): # If it's a root URL that it's going to crawl
             print(indent + text.replace(' ', '') + " | Crawling...")
         elif (switch[logCode]):
             print(indent + text.replace(' ', ''))
@@ -145,19 +143,21 @@ def display(text, logCode, totalDepth, depth, ogUrl):
         if (save): urlLog.write(indent + text.replace(' ', '') + '\n')
 
 
-def getDomain(url):
+def getDomain(url): # Return domain only of passed URL (i.e. 'example.org' if passed 'http://example.org/about-us')
     url = urlStrip(url) + '/'
-    index = url.find('/')
-    return url[:index]
 
-def getPrefix(url):
+    # Return from start of string to first '/'
+    return url[:url.find('/')]
+
+def getPrefix(url): # Return prefix only of passed URL (i.e. http://, ftp://, etc.)
     if ('//' in url):
         index = url.find('//')
         return url[:index+2]
-    return 'http://'
+
+    return 'http://' # Default to this prefix if none is included
 
 
-def mergeUrl(domain, path):
+def mergeUrl(domain, path): # Merge passed domain with passed path (i.e. 'example.org' and '/about-us' to 'example.org/about-us')
     if (domain.endswith('/')): domain = domain[:-1] # Trim last '/' in domain if applicable
 
     if (path == '#'):
@@ -185,10 +185,11 @@ def mergeUrl(domain, path):
 
     if (not domain == getPrefix(domain)): # If domain is more than just a prefix like http://
         return str(getPrefix(domain) + urlStrip(domain) + '/' + path)
+
     return '' # If we erased the domain above, we have a '..' back link with no previous folder to go back to, so we return nothing as it is worthless
 
 
-def ftpParse(soup): # Get contents of soup and return all file paths for crawler
+def ftpParse(soup): # Get contents of FTP soup and return all file paths as a list
     lines = str(soup).splitlines()
     items = []
     paths = []
@@ -212,7 +213,7 @@ def ftpParse(soup): # Get contents of soup and return all file paths for crawler
         
         for j in range(offset, len(items[i])): # Parsing paths from items, and converting them into URL's
             string += items[i][j]
-            if (offset < len(items[i])-1 and j < len(items[i])-1):
+            if (offset < len(items[i])-1 and j < len(items[i])-1): # If there's multiple items in this path, since they were separated by whitespace the path had a space
                 string += '%20' # %20 is a space in a URL
         
         paths[i] = string
@@ -220,44 +221,48 @@ def ftpParse(soup): # Get contents of soup and return all file paths for crawler
     return paths
 
 
-def getLink(soup, isFtpNonWeb):
-    if (not isFtpNonWeb): # If it is not an FTP link, or it is but it's a webpage, bs can parse for the <a> tags
+def getLink(soup, isFtpNonWeb): # Return a list of links
+    if (not isFtpNonWeb): # If it is not an FTP link, or it is but it's a webpage (i.e. .html file), bs can parse for the <a> tags
         return soup.findAll(['a', 'img'])
     
-    return soup
+    # If it is an FTP link, and not a webpage (i.e. .html file), return resulting list from ftpParse()
+    return ftpParse(soup)
 
 
-# Make sure it isn't a mp3, json, png, jpg... Make sure it is a html, asp, php, ftp file without ending
-def isQualifiedLink(href): # Not mailto etc.
-    if (':' in href and not '://' in href): return False # If it has a : but no ://
+def isQualifiedLink(href): # Return boolean on whether the passed href is crawlable or not (i.e. not a mailto: or .mp3 file)
+    if (':' in href and not '://' in href): return False # If it has a ':' but no '://' then it's a mailto: or tel:
     if (href == '#'): return False
     if (urlStrip(href).endswith('..')): return False # Back links
-    if (href.endswith('/LICENSE') or href.endswith('/LICENSE/')): return False
+    if (href.endswith('/LICENSE') or href.endswith('/LICENSE/')): return False # LICENSE file, maybe turn this into a list if other exceptions are needed
 
     if (href.endswith('/')): href = href[:-1] # Remove trailing / for accurate extension comparison
 
     if ('.' in urlStrip(href).replace(getDomain(href), '').replace('/.', '')): # After removing the domain, prefix, and any '/.' (i.e. unix hidden folders/files), if there's a '.' left, check like a file extension
         return isWebFile(href)
+
     return True
 
 
-def isQualifiedEmail(href):
+def isQualifiedEmail(href): # Return boolean on whether the passed href is a valid email or not
     if (href.startswith('mailto:') and href.replace('mailto:', '') != ''):
         return True
+
     return False
 
-def isQualifiedPhone(href):
+def isQualifiedPhone(href): # Return boolean on whether the passed href is a valid phone number or not
     if (href.startswith('tel:') and href.replace('tel:', '') != ''):
         return True
+
     return False
 
 
-def isWebFile(href):
+def isWebFile(href): # Return boolean on whether the passed href ends with one of the extensions in fileEndings or not
     if (href.endswith('/')): href = href[:-1] # Remove last '/' if applicable
 
     for ending in fileEndings:
         if (href.endswith(ending)): # If it has a webpage file ending like .html, etc.
             return True
+
     return False
     
 
