@@ -63,7 +63,7 @@ def crawl(totalDepth, depth, ogUrl, passedUrl, logCode): # Crawl passed URL
             display(href, logCode, totalDepth, depth, ogUrl)
 
             # Only if link is crawlable
-            if (isQualifiedLink(href)):
+            if (isQualifiedLink(href, ogUrl)):
                 # Crawl found link if depth allows it, and link is on entered domain
                 if (depth > 1 and urlStrip(href).startswith(getDomain(ogUrl)) and urlStrip(href) != urlStrip(ogUrl)):
                     crawl(totalDepth, depth - 1, ogUrl, href, logCode)
@@ -88,7 +88,7 @@ def crawl(totalDepth, depth, ogUrl, passedUrl, logCode): # Crawl passed URL
         for u in urlList[urlStrip(passedUrl)]:
 
             # Only if link is crawlable
-            if (isQualifiedLink(u)):
+            if (isQualifiedLink(u, ogUrl)):
                 # Print domain
                 display(u, logCode, totalDepth, depth, ogUrl)
 
@@ -135,7 +135,7 @@ def display(text, logCode, totalDepth, depth, ogUrl): # If it's a URL, and the l
         if (switch[logCode] and depth > 1):
             print()
 
-        if (switch[logCode] and isRootUrl and urlStrip(text).startswith(getDomain(ogUrl)) and isQualifiedLink(text)): # If it's a root URL that it's going to crawl
+        if (switch[logCode] and isRootUrl and urlStrip(text).startswith(getDomain(ogUrl)) and isQualifiedLink(text, ogUrl)): # If it's a root URL that it's going to crawl
             print(indent + text.replace(' ', '') + " | Crawling...")
         elif (switch[logCode]):
             print(indent + text.replace(' ', ''))
@@ -229,7 +229,7 @@ def getLink(soup, isFtpNonWeb): # Return a list of links
     return ftpParse(soup)
 
 
-def isQualifiedLink(href): # Return boolean on whether the passed href is crawlable or not (i.e. not a mailto: or .mp3 file)
+def isQualifiedLink(href, ogUrl): # Return boolean on whether the passed href is crawlable or not (i.e. not a mailto: or .mp3 file)
     if (':' in href and not '://' in href): return False # If it has a ':' but no '://' then it's a mailto: or tel:
     if (href == '#'): return False
     if (urlStrip(href).endswith('..')): return False # Back links
@@ -237,7 +237,7 @@ def isQualifiedLink(href): # Return boolean on whether the passed href is crawla
 
     if (href.endswith('/')): href = href[:-1] # Remove trailing / for accurate extension comparison
 
-    if ('.' in urlStrip(href).replace(getDomain(href), '').replace('/.', '')): # After removing the domain, prefix, and any '/.' (i.e. unix hidden folders/files), if there's a '.' left, check like a file extension
+    if ('.' in urlStrip(href).replace(ogUrl, '').replace(getDomain(href), '').replace('/.', '')): # After removing the domain, prefix, and any '/.' (i.e. unix hidden folders/files), if there's a '.' left, check like a file extension
         return isWebFile(href)
 
     return True
