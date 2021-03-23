@@ -23,7 +23,6 @@ alreadyCrawled = []
 urlList = {}
 emailList = []
 phoneList = []
-offset = 8 # FTP parsing returns a bunch of separate, useless items (like dates, etc.) and this offsets it to only take the file path
 errorCount = 0
 errorLog = None
 
@@ -128,6 +127,7 @@ def getCheckLink(url): # Return a uniform link so that links don't get added twi
         return 'ftp://' + urlStrip(url)
 
     log(0, Error(2, url, None, None)) # Unknown prefix
+    
     return urlStrip(url)
 
 
@@ -156,12 +156,7 @@ def getSoup(url):
         log(0, Error(0, url, e, traceback.format_exc())) # Unable to crawl
         code = ''
     
-    if (isHtmlParse(url)): # Not FTP, or FTP but webfile i.e. index.html
-        soup = BeautifulSoup(code, 'html.parser') # Setup to parse for HTML, etc. tags
-    else:
-        soup = BeautifulSoup(code, features='lxml') # Setup to parse for FTP links
-
-    return soup
+    return BeautifulSoup(code, features='lxml')
 
 
 def getTagList(url, soup): # Return a list of links
@@ -175,9 +170,8 @@ def getTagList(url, soup): # Return a list of links
 def getTimestamp():
     now = str(datetime.datetime.now()) # Example: '2020-09-28 19:49:22.108946'
     now = re.split(' |:', now[:now.rindex('.')]) # Split by ' ' and ':' and remove everything after and including the '.'
-    timestamp = '-'.join(now)
-
-    return timestamp
+    
+    return '-'.join(now)
 
 
 def isFtp(url):
@@ -310,7 +304,7 @@ def mergeUrl(url, ogPath): # Merge passed domain with passed path (i.e. 'example
     # If current domain is a webfile (i.e. ends with '.html') we need to remove the file before merging the path
     if (isWebFile(url)): url = url[:url.rindex('/')] # Remove everything after and including new last '/'
     
-    while (path.startswith('#/') or path.startswith('/#')): # TODO: Keep an eye on this. Potential for actual IDs to get broken, but not sure if it can even happen i.e. /#bottom/something/something-more
+    while (path.startswith('#/') or path.startswith('/#/')): # TODO: Make this remove full IDs from path (i.e. '/#blahblah')
         path = path[path.index('#')+1:] # Remove everything up to and including the first '#' from path
 
 
@@ -342,7 +336,8 @@ def parseTag(parentUrl, tag):
             if (result != None):
                 break
 
-    else: # Is FTP and not a web file
+    # Is FTP and not a web file
+    else:
         result = tag
 
     return result
