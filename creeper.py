@@ -1,4 +1,4 @@
-# Version 1.2.1
+# Version 1.3.0
 from bs4 import BeautifulSoup
 import datetime
 import re
@@ -19,12 +19,11 @@ ignoreList = [None, '#']
 ogUrl = ''
 ogUrlDomain = ''
 totalDepth = 0
-alreadyCrawled = []
+alreadyCrawled = {}
 urlList = {}
 emailList = []
 phoneList = []
 errorCount = 0
-errorLog = None
 
 
 class CrawlJob:
@@ -92,9 +91,9 @@ def crawl(depth, url):
                 if (currentCrawlJob.depth > 1 and urlStrip(parsedUrl).startswith(ogUrlDomain) and urlStrip(parsedUrl) != urlStrip(ogUrl)):
                     crawl(currentCrawlJob.depth - 1, parsedUrl)
         
-        alreadyCrawled.append(currentCrawlJob.checkLink)
+        alreadyCrawled[currentCrawlJob.checkLink] = currentCrawlJob.depth
 
-    elif (currentCrawlJob.depth > 0): # If URL has already been crawled, use the previously stored URL's
+    elif (currentCrawlJob.depth > 0 and isQualifiedRelog(currentCrawlJob.depth, currentCrawlJob.checkLink)): # If URL has already been crawled, use the previously stored URL's if redundant logging is enabled or URL has higher depth.
         for url in urlList[currentCrawlJob.checkLink]:
 
             if (isQualifiedLink(url)):
@@ -196,6 +195,21 @@ def isQualifiedEmail(url): # Return boolean on whether the passed item is a vali
     return False
 
 
+def isQualifiedInput(depth, scrape, save, relog, displayLevel):
+    binaryInputChecklist = [scrape, save, relog]
+    isBinaryInput = True
+    isDisplayLevel = True
+
+    for u in binaryInputChecklist:
+        if (not u.lower().startswith('y') and not u.lower().startswith('n')):
+            isBinaryInput = False
+
+    if (not isinstance(displayLevel, int) or (displayLevel < 0 or displayLevel > 2)):
+        isDisplayLevel = False
+
+    return isinstance(depth, int) and isBinaryInput and isDisplayLevel
+
+
 def isQualifiedLink(url): # Return boolean on whether the passed item is crawlable or not (i.e. not a mailto: or .mp3 file)
     if (urlStrip(url).endswith('..')): return False # Back links
 
@@ -222,6 +236,10 @@ def isQualifiedPhone(url): # Return boolean on whether the passed item is a vali
     return False
 
 
+def isQualifiedRelog(depth, checkLink):
+    return relog or depth > alreadyCrawled[checkLink] # If depth is greater than when previously crawled, there is more to be discovered, hence the recrawl
+
+
 def isWebFile(url): # Return boolean on whether the passed URL ends with one of the extensions in fileEndings or not
     if (url.endswith('/')): url = url[:-1] # Remove last '/' if applicable
 
@@ -236,10 +254,7 @@ def log(depth, entry): # entry can be either a string (URL, Phone, Email) or an 
     indent = ''
 
     if (type(entry) is Error):
-        global errorLog
         errorMessage = 'ERROR ' + str(entry.count) + '.' + str(entry.code) + ': ' + entry.message + ' | ' + entry.url
-
-        if (errorLog == None): errorLog = open(logPath.error, 'w+')
 
         if (displayLevel > 0): print(errorMessage)
 
@@ -368,40 +383,57 @@ def urlStrip(url): # Returns the bare URL after removing http, https, www, etc. 
 
 # Get user variables
 urlInputList = input('\nPlease enter the target URL(s), separated by spaces:\n').split(' ')
-totalDepth = int(input('\nPlease enter how many levels deep the crawler should go:\n'))
-scrape = input('''
+
+while True:
+    try:
+        totalDepth = int(input('\nPlease enter how many levels deep the crawler should go:\n'))
+    except Exception as e:
+        totalDepth = None
+
+    scrape = input('''
 Do you want to scrape for emails and phone numbers?
 y: yes
 n: no
 ''')
 
-scrape = scrape.lower() == 'y' or scrape.lower() == 'yes'
-
-save = input('''
+    save = input('''
 Would you like to save all data to files in the /logs folder?
 y: yes
 n: no
 ''')
-    
-save = save.lower() == 'y' or save.lower() == 'yes'
 
-displayLevel = int(input('''
+    relog =  input('''
+Would you like to log redundant URL's?
+y: yes   (Preserves original tree structure)
+n: no    (Reduces overall crawling duration)
+''')
+
+    displayLevel = int(input('''
 Please select a logging display option:
 0: Quiet
 1: Standard
 2: Verbose
 '''))
 
+    if (isQualifiedInput(totalDepth, scrape, save, relog, displayLevel)):
+        break
+    else:
+        print("\n***\nINVALID INPUT\n***\n")
+
+scrape = scrape.lower().startswith('y')
+save = save.lower().startswith('y')
+relog = relog.lower().startswith('y')
+
 logPath = LogPath()
 
 # Open log files if applicable
+errorLog = open(logPath.error, 'w+')
+
 if (save):
-    global urlLog
     urlLog = open(logPath.url, 'w+')
+
     if (scrape):
-        global emailLog
         emailLog = open(logPath.email, 'w+')
-        global phoneLog
         phoneLog = open(logPath.phone, 'w+')
         
 # Begin crawling/scraping
@@ -410,6 +442,7 @@ for link in urlInputList: # Crawl for each URL the user inputs
     ogUrlDomain = getDomain(ogUrl)
 
     print('\n\n\nCrawling ' + link + '\n')
+
     crawl(totalDepth, link)
 
 if (displayLevel > 0):
