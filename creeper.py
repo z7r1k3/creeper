@@ -1,12 +1,12 @@
-# Version 1.3.0
+# Version 1.3.1
 from bs4 import BeautifulSoup
-import datetime
-import re
+from datetime import datetime
 import traceback
 import urllib.request
+import uuid
 
 # Config var squad
-defaultLogPath = 'logs/' # Determines where logs are stored. Do not forget to put a '/' at the end
+defaultLogPath = 'logs/' # Determines where logs are stored. Make sure to put a '/' at the end
 fileEndings = ['.html', '.htm', '.php', '.asp', '.cfm'] # Determines what URLs/files will always be crawled, even if ftp(s)://
 disqualifyEndings = ['/LICENSE'] # If a URL ends with any of these, do not consider a qualified URL for crawling. Do NOT put '/' at the end
 disqualifyBeginnings = ['mailto:', 'tel:'] # If a URL starts with any of these, do not consider a qualified URL for crawling
@@ -19,11 +19,21 @@ ignoreList = [None, '#']
 ogUrl = ''
 ogUrlDomain = ''
 totalDepth = 0
-alreadyCrawled = {}
+previouslyCrawledLinksWithDepths = {} # Link is key, depth is value. Used for both seeing if a link has already been crawled, and at what depth it was crawled at
 urlList = {}
 emailList = []
 phoneList = []
 errorCount = 0
+jobId = str(uuid.uuid4())
+timestamp = datetime.now().strftime('%Y-%m-%d-%H-%M-%S')
+debugLogPath = defaultLogPath + '1-debug/' + 'debug_' + timestamp + '.txt'
+urlLogPath = defaultLogPath + '2-url/' + 'url_' + timestamp + '.txt'
+emailLogPath = defaultLogPath + '3-email/' + 'email_' + timestamp + '.txt'
+phoneLogPath = defaultLogPath + '4-phone/' + 'phone_' + timestamp + '.txt'
+
+# TODO: Split log() into each log type. Replace Error class with DebugEntry class?
+# TODO: Make mergeUrl() remove full IDs from path (i.e. '/#blahblah')
+# TODO: Add job info (i.e. total job time) at end output
 
 
 class CrawlJob:
@@ -48,22 +58,13 @@ class Error:
         self.exceptionType = errorExceptionType
         self.exception = errorException
 
-
-class LogPath:
-    def __init__(self):
-        timestamp = getTimestamp()
-        self.url = defaultLogPath + 'url/' + timestamp + '.txt'
-        self.email = defaultLogPath + 'email/' + timestamp + '.txt'
-        self.phone = defaultLogPath + 'phone/' + timestamp + '.txt'
-        self.error = defaultLogPath + '.error/' + timestamp + '.txt'
-
         
 
 def crawl(depth, url):
     currentCrawlJob = CrawlJob(depth, url)
 
 
-    if (currentCrawlJob.depth > 0 and not currentCrawlJob.checkLink in alreadyCrawled):
+    if (currentCrawlJob.depth > 0 and not currentCrawlJob.checkLink in previouslyCrawledLinksWithDepths):
         currentCrawlJob.soup = getSoup(currentCrawlJob.url)
 
         if (currentCrawlJob.checkLink not in urlList): urlList[currentCrawlJob.checkLink] = []
@@ -91,7 +92,7 @@ def crawl(depth, url):
                 if (currentCrawlJob.depth > 1 and urlStrip(parsedUrl).startswith(ogUrlDomain) and urlStrip(parsedUrl) != urlStrip(ogUrl)):
                     crawl(currentCrawlJob.depth - 1, parsedUrl)
         
-        alreadyCrawled[currentCrawlJob.checkLink] = currentCrawlJob.depth
+        previouslyCrawledLinksWithDepths[currentCrawlJob.checkLink] = currentCrawlJob.depth
 
     elif (currentCrawlJob.depth > 0 and isQualifiedRelog(currentCrawlJob.depth, currentCrawlJob.checkLink)): # If URL has already been crawled, use the previously stored URL's if redundant logging is enabled or URL has higher depth.
         for url in urlList[currentCrawlJob.checkLink]:
@@ -166,13 +167,6 @@ def getTagList(url, soup): # Return a list of links
     return ftpParse(soup)
 
 
-def getTimestamp():
-    now = str(datetime.datetime.now()) # Example: '2020-09-28 19:49:22.108946'
-    now = re.split(' |:', now[:now.rindex('.')]) # Split by ' ' and ':' and remove everything after and including the '.'
-    
-    return '-'.join(now)
-
-
 def isFtp(url):
     if ((url.startswith('ftp://') or url.startswith('ftps://'))):
         return True
@@ -236,8 +230,15 @@ def isQualifiedPhone(url): # Return boolean on whether the passed item is a vali
     return False
 
 
-def isQualifiedRelog(depth, checkLink):
-    return relog or depth > alreadyCrawled[checkLink] # If depth is greater than when previously crawled, there is more to be discovered, hence the recrawl
+def isQualifiedRelog(depth, checkLink): # If depth is greater than when previously crawled, there is more to be discovered, hence the recrawl. Otherwise check relog setting
+    if (depth > previouslyCrawledLinksWithDepths[checkLink]):
+        previouslyCrawledLinksWithDepths[checkLink] = depth
+        return True
+
+    elif (relog):
+        return True
+
+    return False
 
 
 def isWebFile(url): # Return boolean on whether the passed URL ends with one of the extensions in fileEndings or not
@@ -254,16 +255,16 @@ def log(depth, entry): # entry can be either a string (URL, Phone, Email) or an 
     indent = ''
 
     if (type(entry) is Error):
-        errorMessage = 'ERROR ' + str(entry.count) + '.' + str(entry.code) + ': ' + entry.message + ' | ' + entry.url
+        errorMessage = '#' + str(entry.count) + ': ERROR_' + str(entry.code) + ' ' + entry.message + ' | ' + entry.url
 
         if (displayLevel > 0): print(errorMessage)
 
-        errorLog.write(errorMessage)
+        debugLog.write(errorMessage)
 
         if (entry.exceptionType is not None and entry.exception is not None):
-            errorLog.write('\n\n' + str(entry.exceptionType) + '\n\n' + entry.exception + '\n\n\n')
+            debugLog.write('\n\n' + str(entry.exceptionType) + '\n\n' + entry.exception + '\n\n\n')
         else:
-            errorLog.write('\n\n\n')
+            debugLog.write('\n\n\n')
 
     elif (type(entry) is str):
         isRootUrl = (totalDepth == depth) and (urlStrip(entry) != urlStrip(ogUrl))
@@ -319,7 +320,7 @@ def mergeUrl(url, ogPath): # Merge passed domain with passed path (i.e. 'example
     # If current domain is a webfile (i.e. ends with '.html') we need to remove the file before merging the path
     if (isWebFile(url)): url = url[:url.rindex('/')] # Remove everything after and including new last '/'
     
-    while (path.startswith('#/') or path.startswith('/#/')): # TODO: Make this remove full IDs from path (i.e. '/#blahblah')
+    while (path.startswith('#/') or path.startswith('/#/')):
         path = path[path.index('#')+1:] # Remove everything up to and including the first '#' from path
 
 
@@ -424,17 +425,19 @@ scrape = scrape.lower().startswith('y')
 save = save.lower().startswith('y')
 relog = relog.lower().startswith('y')
 
-logPath = LogPath()
-
 # Open log files if applicable
-errorLog = open(logPath.error, 'w+')
+debugLog = open(debugLogPath, 'w+')
+debugLog.write('JobID: ' + jobId + '\n\n')
 
 if (save):
-    urlLog = open(logPath.url, 'w+')
+    urlLog = open(urlLogPath, 'w+')
+    urlLog.write('JobID: ' + jobId + '\n\n')
 
     if (scrape):
-        emailLog = open(logPath.email, 'w+')
-        phoneLog = open(logPath.phone, 'w+')
+        emailLog = open(emailLogPath, 'w+')
+        emailLog.write('JobID: ' + jobId + '\n\n')
+        phoneLog = open(phoneLogPath, 'w+')
+        phoneLog.write('JobID: ' + jobId + '\n\n')
         
 # Begin crawling/scraping
 for link in urlInputList: # Crawl for each URL the user inputs
@@ -445,16 +448,23 @@ for link in urlInputList: # Crawl for each URL the user inputs
 
     crawl(totalDepth, link)
 
-if (displayLevel > 0):
-    print("\n\nErrors: " + str(errorCount))
+    if (save):
+        urlLog.write('END CRAWL: ' + link + '\n\n')
 
+if (displayLevel > 0):
     if (scrape):
-        print('\n\n\nEmails:\n')
+        print('\n\nEmails:')
 
         for email in emailList:
             print(email)
 
-        print('\n\n\nPhone Numbers:\n')
+        print('\n\nPhone Numbers:')
 
         for phone in phoneList:
             print(phone)
+    
+    # Add job info here, i.e. total job time in seconds
+
+print('\n\n\nErrorCount: ' + str(errorCount))
+print('Timestamp: ' + timestamp)
+print('JobID: ' + jobId)
