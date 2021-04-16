@@ -1,4 +1,4 @@
-# Version 1.3.2
+# Version 1.3.3
 from bs4 import BeautifulSoup
 from datetime import datetime
 import traceback
@@ -10,7 +10,6 @@ defaultLogPath = 'logs/' # Determines where logs are stored. Make sure to put a 
 fileEndings = ['.html', '.htm', '.php', '.asp', '.cfm'] # Determines what URLs/files will always be crawled, even if ftp(s)://
 disqualifyEndings = ['/LICENSE'] # If a URL ends with any of these, do not consider a qualified URL for crawling. Do NOT put '/' at the end
 disqualifyBeginnings = ['mailto:', 'tel:'] # If a URL starts with any of these, do not consider a qualified URL for crawling
-stripText = ['http://', 'https://', 'ftp://', 'ftps://', 'www.', ' '] # Determines what strings are removed from URLs when stripping
 markupTags = ['a', 'link', 'script', 'iframe', 'img'] # Determines tags parsed from webpage source code
 attributes = ['href', 'src'] # Determines attributes checked from tags to retrieve URLs
 ignoreList = [None, '#']
@@ -18,6 +17,7 @@ ignoreList = [None, '#']
 # Var squad
 ogUrl = ''
 ogUrlDomain = ''
+tab = '    '
 totalDepth = 0
 # lastCrawledUrlAtDepth = {} # Depth is key, link/url is value
 crawledUrlDict = {} # Checklink is key, URL class is value
@@ -31,53 +31,118 @@ urlLogPath = defaultLogPath + '2-url/' + 'url_' + timestamp + '.txt'
 emailLogPath = defaultLogPath + '3-email/' + 'email_' + timestamp + '.txt'
 phoneLogPath = defaultLogPath + '4-phone/' + 'phone_' + timestamp + '.txt'
 # fileLogPath = defaultLogPath + '5-file/' + 'file_' + timestamp + '/'
+errorUnableToCrawl = 0
+errorTooManyBackLinks = 1
+errorUrlNotInDict = 2
 
-# TODO: Keep log() as one function, but make all log entries their own classes, with toPrint() methods that structure the entire entry (or whatev I wanna call it)
 # TODO: Add job info (i.e. total job time) at end output
+# TODO: Once done with writeLog, remove crawl() completely. We should iterate through the tree of links rather than use recursion.
+#       Otherwise, a max recursion can be hit, and time complexity increases exponentially rather than linearly.
 
 
 
-class DebugError:
-    def __init__(self, errorCode, errorUrl, errorExceptionType, errorException):
+class DebugError: # TODO: Add my own exception messages for custom errors
+    def __init__(self, code, url, exceptionType, exception):
         errorMessage = ['Unable to crawl', 'Too many back links', 'URL not in dictionary']
-        global errorCount
-        errorCount += 1
+        self.message = errorMessage[code]
+        self.url = url
+        self.code = code
+        self.exceptionType = exceptionType
+        self.exception = exception
+
+        incrErrorCount()
         self.count = errorCount
-        self.code = errorCode
-        self.message = errorMessage[self.code]
-        self.url = errorUrl
-        self.exceptionType = errorExceptionType
-        self.exception = errorException
+
+
+class DebugInfo: # TODO: Utilize this
+    def __init__(self, url, header, subheader, body):
+        self.url = url
+        self.header = header
+        self.subheader = subheader
+        self.body = body
 
 
 class Email:
     def __init__(self, email):
-        self.email = email
+        self.email = getStrippedEmail(email)
+
+        # Blank squad
+        self.logEntry = ''
+
+    def getLogOutput(self):
+        return self.email
+
+    def getPrintOutput(self):
+        if (self.logEntry != ''):
+            return self.email + ' | ' + self.logEntry
+        
+        return self.email
 
 
 class Phone:
     def __init__(self, phone):
-        self.phone = self.phone
+        self.phone = getStrippedPhone(phone)
+
+        # Blank squad
+        self.logEntry = ''
+
+    def getLogOutput(self):
+        return self.phone
+
+    def getPrintOutput(self):        
+        if (self.logEntry != ''):
+            return self.phone + ' | ' + self.logEntry
+        
+        return self.phone
 
 
 class URL:
     def __init__(self, url, depth):
-        self.depth = depth # Current, not total, depth level (starts at total depth and counts down to 1)
         self.url = url
+        self.depth = depth # Current, not total, depth level (starts at total depth and counts down to 1)
+        self.indent = tab * (totalDepth - self.depth)
+        self.logUrl = getRebuiltLink(self.url).replace(' ', '')
 
-        # Blank squad. Will be set later
+        # Blank squad
+        self.logEntry = ''
         self.soup = None
         self.parsedList = []
+
+    def getLogOutput(self):
+        return self.indent + self.logUrl
+
+    def getPrintOutput(self):        
+        if (self.logEntry != ''):
+            return self.indent + self.logUrl + ' | ' + self.logEntry
+
+        return self.indent + self.logUrl
+
+    def setSoup(self):
+        if (self.soup == None):
+            code = ''
+            
+            try: # Read and store code for parsing
+                code = urllib.request.urlopen(self.url).read()
+            except Exception as exception:
+                writeLog(DebugError(errorUnableToCrawl, self.url, exception, traceback.format_exc()))
+
+            self.soup = BeautifulSoup(code, features='lxml')
 
         
 
 def crawl(currentUrl, currentDepth):
     currentUrl = getRebuiltLink(currentUrl)
+    hasCrawled = getCheckLink(currentUrl) in crawledUrlDict
 
-    if (currentDepth > 0 and not hasCrawled(currentUrl)):
+    if (currentDepth > 0 and not hasCrawled):
         currentCrawlJob = URL(currentUrl, currentDepth)
-        currentCrawlJob.soup = getSoup(currentCrawlJob.url)
+        currentCrawlJob.setSoup()
         crawledUrlDict[getCheckLink(currentCrawlJob.url)] = currentCrawlJob
+
+        if (isBetaUrl(currentCrawlJob.url, currentCrawlJob.depth) and isQualifiedCrawlUrl(currentCrawlJob.url)):
+            currentCrawlJob.logEntry = 'Crawling...'
+
+        writeLog(currentCrawlJob)
 
         for tag in getTagList(currentCrawlJob.url, currentCrawlJob.soup):
             parsedUrl = parseTag(currentCrawlJob.url, tag)
@@ -93,30 +158,50 @@ def crawl(currentUrl, currentDepth):
 
             else:
                 continue
-            
-            log(currentDepth, parsedUrl)
 
-            if (isQualifiedLink(parsedUrl)):
+            if (currentDepth > 1 and isQualifiedCrawlUrl(parsedUrl) and getStrippedUrl(parsedUrl).startswith(ogUrlDomain) and getStrippedUrl(parsedUrl) != getStrippedUrl(ogUrl)):
                 # Crawl found URL if currentDepth allows it, and URL is on entered domain
-                if (currentDepth > 1 and urlStrip(parsedUrl).startswith(ogUrlDomain) and urlStrip(parsedUrl) != urlStrip(ogUrl)):
-                    crawl(parsedUrl, currentDepth - 1)
+                crawl(parsedUrl, currentDepth - 1)
+            else:
+                if (not isQualifiedEmail(parsedUrl) and not isQualifiedPhone(parsedUrl)):
+                    writeLog(URL(parsedUrl, currentDepth - 1))
+                    
+                elif (isQualifiedEmail(parsedUrl)):
+                    writeLog(Email(parsedUrl))
+
+                elif (isQualifiedPhone(parsedUrl)):
+                    writeLog(Phone(parsedUrl))
         
         # lastCrawledUrlAtDepth[currentDepth] = currentUrl
 
-    elif (currentDepth > 0 and isQualifiedRelog(currentUrl, currentDepth)): # If URL has already been crawled, use the previously stored URL's if redundant logging is enabled or URL has higher depth.
-        parsedList = crawledUrlDict[getCheckLink(currentUrl)].parsedList
+    elif (currentDepth > 0): # If URL has already been crawled, use the previously stored URL's if redundant logging is enabled or URL has higher depth.
+        currentCheckLink = getCheckLink(currentUrl)
+        isRelog = isQualifiedRelog(currentUrl, currentDepth)
 
-        if (currentDepth > crawledUrlDict[getCheckLink(currentUrl)].depth): # if currentDepth is greater than when we last crawled this URL, update the depth so we don't recrawl (after this recrawl) at anything equal to or less
-            crawledUrlDict[getCheckLink(currentUrl)].depth = currentDepth
+        currentRelogJob = crawledUrlDict[currentCheckLink]
+        currentRelogJob.depth = currentDepth
+        currentRelogJob.logEntry = "Already crawled"
+
+        writeLog(currentRelogJob)
         
-        for item in parsedList:
+        if (isRelog):
+            if (currentDepth > crawledUrlDict[currentCheckLink].depth): # if currentDepth is greater than when we last crawled this URL, update the depth so we don't recrawl (after this recrawl) at anything equal to or less
+                crawledUrlDict[currentCheckLink].depth = currentDepth
 
-            if (isQualifiedLink(item)):
-                log(currentDepth, item)
+            for item in currentRelogJob.parsedList:
 
-                # Crawl found URL if currentDepth allows it, and URL is on entered domain
-                if (currentDepth > 1 and urlStrip(item).startswith(ogUrlDomain) and urlStrip(item) != urlStrip(ogUrl)):
+                if (currentDepth > 1 and isQualifiedCrawlUrl(item) and getStrippedUrl(item).startswith(ogUrlDomain) and getStrippedUrl(item) != getStrippedUrl(ogUrl)):
+                    # Crawl found URL if currentDepth allows it, and URL is on entered domain
                     crawl(item, currentDepth - 1)
+                else:
+                    if (not isQualifiedEmail(item) and not isQualifiedPhone(item)):
+                        writeLog(URL(item, currentDepth - 1))
+
+                    elif (isQualifiedEmail(item)):
+                        writeLog(Email(item))
+
+                    elif (isQualifiedPhone(item)):
+                        writeLog(Phone(item))
 
 
 def ftpParse(soup): # Get contents of FTP soup and return all file paths as a list
@@ -135,16 +220,16 @@ def ftpParse(soup): # Get contents of FTP soup and return all file paths as a li
 
 def getCheckLink(url): # Return a uniform link so that links don't get added twice (i.e. the 'http://' and 'https://' versions)
     if (getPrefix(url).startswith('http')):
-        return 'http://' + urlStrip(url)
+        return 'http://' + getStrippedUrl(url)
 
     elif (getPrefix(url).startswith('ftp')):
-        return 'ftp://' + urlStrip(url)
+        return 'ftp://' + getStrippedUrl(url)
     
-    return urlStrip(url) # Used if getPrefix() returns '', meaning it's a phone or email
+    return getStrippedUrl(url) # Used if getPrefix() returns '', meaning it's a phone or email
 
 
 def getDomain(url): # Return domain only of passed URL (i.e. 'example.org' if passed 'http://example.org/about-us')
-    url = urlStrip(url) + '/'
+    url = getStrippedUrl(url) + '/'
 
 
     # Return from start of string to first '/'
@@ -162,17 +247,40 @@ def getPrefix(url): # Return prefix only of passed URL (i.e. http://, ftp://, et
 
 
 def getRebuiltLink(url): # Ensure that link is able to be crawled (i.e. replace '//' with 'http://'), while preserving the existing prefix if it has one
-    return getPrefix(url) + urlStrip(url)
+    return getPrefix(url) + getStrippedUrl(url)
 
 
-def getSoup(url):
-    try: # Read and store code for parsing
-        code = urllib.request.urlopen(url).read()
-    except Exception as e:
-        log(0, DebugError(0, url, e, traceback.format_exc())) # Unable to crawl
-        code = ''
+def getStrippedEmail(email): # Return raw email i.e. 'email@example.com' instead of 'mailto:email@example.com'
+    strToRemove = ['mailto:', ' ']
+
+    for u in strToRemove:
+        email = email.replace(u, '')
+
+    return email
+
+
+def getStrippedPhone(phone): # Return raw phone # i.e. '1234567890' instead of '(123) 456-7890' or 'tel:1234567890'
+    strToRemove = ['tel:', '(', ')', '-', ' ']
     
-    return BeautifulSoup(code, features='lxml')
+    for u in strToRemove:
+        phone = phone.replace(u, '')
+
+    return phone
+
+
+def getStrippedUrl(url): # Returns the bare URL after removing http, https, www, etc. (i.e. 'example.org' instead of 'http://www.example.org')
+    strToRemove = ['http://', 'https://', 'ftp://', 'ftps://', 'www.', ' ']
+
+    for u in strToRemove:
+        url = url.replace (u, '')
+
+    if (url.startswith('//')):
+        url = url[+2:]
+
+    if (url.endswith('/')):
+        url = url[:-1]
+
+    return url
 
 
 def getTagList(url, soup): # Return a list of links
@@ -183,12 +291,12 @@ def getTagList(url, soup): # Return a list of links
     return ftpParse(soup)
 
 
-def hasCrawled(url):
-    return getCheckLink(url) in crawledUrlDict
-
-
 def hasPrefix(url):
     return '://' in url or url.startswith('//')
+
+
+def isBetaUrl(url, depth): # URLs that are both on the og domain, as well as at the second-highest depth or higher (beginning of the rabbit holes basically)
+        return totalDepth <= (depth + 1)
 
 
 def isFtp(url):
@@ -206,6 +314,25 @@ def isHtmlParse(url):
     return (not ftp) or (ftp and webFile) # Not FTP, or is FTP with webfile (.html, etc.)
 
 
+def isQualifiedCrawlUrl(url): # Return boolean on whether the passed item is crawlable or not (i.e. not a mailto: or .mp3 file) TODO: Refactor this?
+    if (getStrippedUrl(url).endswith('..')): return False # Back links
+
+    for u in disqualifyEndings:
+        if (url.endswith(getStrippedUrl(u))):
+            return False
+
+    for u in disqualifyBeginnings:
+        if (url.startswith(getStrippedUrl(u))):
+            return False
+
+    if (url.endswith('/')): url = url[:-1] # Remove trailing / for accurate extension comparison
+
+    if ('.' in getStrippedUrl(url).replace(ogUrl, '').replace(getDomain(url), '').replace('/.', '')): # After removing the domain, prefix, and any '/.' (i.e. unix hidden folders/files), if there's a '.' left, check like a file extension
+        return isWebFile(url)
+
+    return True
+
+
 def isQualifiedEmail(url): # Return boolean on whether the passed item is a valid email or not
     if (url.startswith('mailto:') and url.replace('mailto:', '') != ''):
         return True
@@ -213,7 +340,7 @@ def isQualifiedEmail(url): # Return boolean on whether the passed item is a vali
     return False
 
 
-def isQualifiedInput(depth, scrape, save, relog, displayLevel):
+def isQualifiedInput(depth, scrape, save, relog, logLevel):
     binaryInputChecklist = [scrape, save, relog]
     isBinaryInput = True
     isDisplayLevel = True
@@ -222,29 +349,10 @@ def isQualifiedInput(depth, scrape, save, relog, displayLevel):
         if (not u.lower().startswith('y') and not u.lower().startswith('n')):
             isBinaryInput = False
 
-    if (not isinstance(displayLevel, int) or (displayLevel < 0 or displayLevel > 2)):
+    if (not isinstance(logLevel, int) or (logLevel < 0 or logLevel > 2)):
         isDisplayLevel = False
 
     return isinstance(depth, int) and isBinaryInput and isDisplayLevel
-
-
-def isQualifiedLink(url): # Return boolean on whether the passed item is crawlable or not (i.e. not a mailto: or .mp3 file)
-    if (urlStrip(url).endswith('..')): return False # Back links
-
-    for u in disqualifyEndings:
-        if (url.endswith(urlStrip(u))):
-            return False
-
-    for u in disqualifyBeginnings:
-        if (url.startswith(urlStrip(u))):
-            return False
-
-    if (url.endswith('/')): url = url[:-1] # Remove trailing / for accurate extension comparison
-
-    if ('.' in urlStrip(url).replace(ogUrl, '').replace(getDomain(url), '').replace('/.', '')): # After removing the domain, prefix, and any '/.' (i.e. unix hidden folders/files), if there's a '.' left, check like a file extension
-        return isWebFile(url)
-
-    return True
 
 
 def isQualifiedPhone(url): # Return boolean on whether the passed item is a valid phone number or not
@@ -256,7 +364,7 @@ def isQualifiedPhone(url): # Return boolean on whether the passed item is a vali
 
 def isQualifiedRelog(url, currentDepth): # If depth is greater than when previously crawled, there is more to be discovered, hence the recrawl. Otherwise check relog setting
     if (getCheckLink(url) not in crawledUrlDict):
-        log(0, DebugError(2, url, None, None)) # Tried to recrawl non-existant URL
+        writeLog(DebugError(errorUrlNotInDict, url, None, None)) # Tried to recrawl non-existant URL
 
         return False
 
@@ -276,68 +384,9 @@ def isWebFile(url): # Return boolean on whether the passed URL ends with one of 
     return False
 
 
-def log(depth, entry): # entry can be either a string (URL, Phone, Email) or an Error()
-    indent = ''
-
-    if (type(entry) is DebugError):
-        errorMessage = '#' + str(entry.count) + ': ERROR_' + str(entry.code) + ' ' + entry.message + ' | ' + entry.url
-
-        if (displayLevel > 0): print(errorMessage)
-
-        debugLog.write(errorMessage)
-
-        if (entry.exceptionType is not None and entry.exception is not None):
-            debugLog.write('\n\n' + str(entry.exceptionType) + '\n\n' + entry.exception + '\n\n\n')
-        else:
-            debugLog.write('\n\n\n')
-
-    elif (type(entry) is str):
-        isRootUrl = (totalDepth == depth) and (urlStrip(entry) != urlStrip(ogUrl))
-        entry = getRebuiltLink(entry)
-
-        # Handle formatting
-        indent = '     ' * (totalDepth - depth)
-        
-        switch = {
-            0: False,
-            1: isRootUrl,
-            2: True,
-        }
-
-        if (not isQualifiedEmail(entry) and not isQualifiedPhone(entry)):
-            if (switch[displayLevel] and depth > 1):
-                print()
-
-            if (switch[displayLevel] and isRootUrl and urlStrip(entry).startswith(ogUrlDomain) and isQualifiedLink(entry)): # If it's a root URL that it's going to crawl
-                print(indent + entry.replace(' ', '') + " | Crawling...")
-            elif (switch[displayLevel]):
-                print(indent + entry.replace(' ', ''))
-
-            if (save): urlLog.write(indent + entry.replace(' ', '') + '\n')
-            
-        elif (scrape and isQualifiedEmail(entry)):
-            entry = entry.replace('mailto:', '')
-
-
-            if (entry not in emailList):
-                emailList.append(entry)
-
-                if (save): emailLog.write(entry + '\n')
-            
-        elif (scrape and isQualifiedPhone(entry)):
-            entry = entry.replace('tel:', '')
-
-
-            if (entry not in phoneList):
-                phoneList.append(entry)
-
-                if save: phoneLog.write(entry + '\n')
-
-
-def mergeUrl(url, ogPath): # Merge passed domain with passed path (i.e. 'example.org' and '/about-us' to 'http://example.org/about-us')
-    path = ogPath
+def mergeUrl(url, path): # Merge passed domain with passed path (i.e. 'example.org' and '/about-us' to 'http://example.org/about-us')
+    ogPath = path
     prefix = getPrefix(url)
-
 
     if (url.endswith('/')): url = url[:-1] # Trim last '/' in domain if applicable
 
@@ -356,12 +405,12 @@ def mergeUrl(url, ogPath): # Merge passed domain with passed path (i.e. 'example
         path = path[path.index('..')+3:] # Remove everything up to and including the first '..' from path
 
         try:
-            url = prefix + urlStrip(url)[:urlStrip(url).rindex('/')] # Remove everything after new last '/', essentially going back a folder
-        except Exception as e:
-            log(0, DebugError(1, ogPath, e, traceback.format_exc())) # Too many back links
+            url = prefix + getStrippedUrl(url)[:getStrippedUrl(url).rindex('/')] # Remove everything after new last '/', essentially going back a folder
+        except Exception as exception:
+            writeLog(DebugError(errorTooManyBackLinks, ogPath, exception, traceback.format_exc()))
 
     if (not url == prefix): # If domain is more than just a prefix like http://
-        return str(prefix + urlStrip(url) + '/' + path)
+        return str(prefix + getStrippedUrl(url) + '/' + path)
 
     return '' # If we erased the domain above, we have a '..' back link with no previous folder to go back to, so we return nothing as it is worthless
 
@@ -383,20 +432,51 @@ def parseTag(parentUrl, tag):
     return result
 
 
-def urlStrip(url): # Returns the bare URL after removing http, https, www, etc. (i.e. 'example.org' instead of 'http://www.example.org')
-    bareUrl = url
+def incrErrorCount():
+    global errorCount
+    errorCount += 1
 
 
-    for u in stripText:
-        bareUrl = bareUrl.replace (u, '')
+def writeLog(entry): # entry can be either a string (URL, Phone, Email) or an Error()
+    if (type(entry) is DebugError):
+        errorMessage = '#' + str(entry.count) + ': ERROR_' + str(entry.code) + ' ' + entry.message + ' | ' + entry.url
 
-    if (bareUrl.startswith('//')):
-        bareUrl = bareUrl[+2:]
+        if (logLevel > 0): print(errorMessage)
 
-    if (bareUrl.endswith('/')):
-        bareUrl = bareUrl[:-1]
+        debugLog.write(errorMessage)
 
-    return bareUrl
+        if (entry.exceptionType is not None and entry.exception is not None):
+            debugLog.write('\n\n' + str(entry.exceptionType) + '\n\n' + entry.exception + '\n\n\n')
+        else:
+            debugLog.write('\n\n\n')
+
+    elif (type(entry) is URL):
+        # logLevel
+        switch = {
+            0: False,
+            1: isBetaUrl(entry.url, entry.depth),
+            2: True,
+        }
+
+        if (switch[logLevel]): # If it's a root URL that it's going to crawl, or full logging is enabled
+            print(entry.getPrintOutput())
+
+        if (save):
+            urlLog.write(entry.getLogOutput() + '\n')
+
+    elif (type(entry) is Email):
+        if (scrape and entry not in emailList):
+            emailList.append(entry.getPrintOutput()) # Will print at end regardless of log level
+
+            if (save):
+                emailLog.write(entry.getLogOutput() + '\n')
+
+    elif (type(entry) is Phone):
+        if (scrape and entry not in phoneList):
+            phoneList.append(entry.getPrintOutput()) # Will print at end regardless of log level
+
+            if (save):
+                phoneLog.write(entry.getLogOutput() + '\n')
 
 
 
@@ -413,30 +493,44 @@ while True:
 
     scrape = input('''
 Do you want to scrape for emails and phone numbers?
-y: yes
+y: yes (Default)
 n: no
 ''')
+
+    if (scrape == ''):
+        scrape = 'y'
 
     save = input('''
 Would you like to save all data to files in the /logs folder?
-y: yes
+y: yes (Default)
 n: no
 ''')
 
+    if (save == ''):
+        save = 'y'
+
     relog =  input('''
-Would you like to log redundant URL's?
-y: yes   (Preserves original tree structure)
-n: no    (Reduces overall crawling duration)
+Would you like to log redundant URL's? Doing so increases overall crawling duration.
+y: yes
+n: no (Default)
 ''')
 
-    displayLevel = int(input('''
+    if (relog == ''):
+        relog = 'n'
+
+    logLevel = input('''
 Please select a logging display option:
 0: Quiet
-1: Standard
+1: Standard (Default)
 2: Verbose
-'''))
+''')
 
-    if (isQualifiedInput(totalDepth, scrape, save, relog, displayLevel)):
+    if (logLevel == ''):
+        logLevel = 1
+
+    logLevel = int(logLevel)
+
+    if (isQualifiedInput(totalDepth, scrape, save, relog, logLevel)):
         break
     else:
         print("\n***\nINVALID INPUT\n***\n")
@@ -464,14 +558,12 @@ for link in urlInputList: # Crawl for each URL the user inputs
     ogUrl = link
     ogUrlDomain = getDomain(ogUrl)
 
-    print('\n\n\nCrawling ' + link + '\n')
-
     crawl(link, totalDepth)
 
     if (save):
         urlLog.write('END CRAWL: ' + link + '\n\n')
 
-if (displayLevel > 0):
+if (logLevel > 0):
     if (scrape):
         print('\n\nEmails:')
 
