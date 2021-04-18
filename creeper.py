@@ -1,4 +1,5 @@
-# Version 1.3.3
+# Creeper: A Cross-Platform Web Crawler and Scraper
+
 from bs4 import BeautifulSoup
 from datetime import datetime
 import traceback
