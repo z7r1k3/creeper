@@ -1,4 +1,4 @@
-# Creeper: A Cross-Platform Web Crawler and Scraper
+### Creeper: A Cross-Platform Web Crawler and Scraper
 
 from bs4 import BeautifulSoup
 from datetime import datetime
@@ -6,25 +6,17 @@ import traceback
 import urllib.request
 import uuid
 
-# Config var squad
-defaultLogPath = 'logs/' # Determines where logs are stored. Make sure to put a '/' at the end
-fileEndings = ['.html', '.htm', '.php', '.asp', '.cfm'] # Determines what URLs/files will always be crawled, even if ftp(s)://
-disqualifyEndings = ['/LICENSE'] # If a URL ends with any of these, do not consider a qualified URL for crawling. Do NOT put '/' at the end
-disqualifyBeginnings = ['mailto:', 'tel:'] # If a URL starts with any of these, do not consider a qualified URL for crawling
-markupTags = ['a', 'link', 'script', 'iframe', 'img'] # Determines tags parsed from webpage source code
+## Config Lists
 attributes = ['href', 'src'] # Determines attributes checked from tags to retrieve URLs
-ignoreList = [None, '#']
+defaultLogPath = 'logs/' # Determines where logs are stored. Make sure to put a '/' at the end
+disqualifyBeginnings = ['mailto:', 'tel:'] # If a URL starts with any of these, do not consider a qualified URL for crawling
+disqualifyEndings = ['/LICENSE'] # If a URL ends with any of these, do not consider a qualified URL for crawling. Do NOT put '/' at the end
+fileEndings = ['.html', '.htm', '.php', '.asp', '.cfm'] # Determines what URLs/files will always be crawled, even if ftp(s)://
+ignoreList = [None, '#'] # If a URL, etc. is equal to any of these, it will be skipped
+markupTags = ['a', 'link', 'script', 'iframe', 'img'] # Determines tags parsed from webpage source code
 
-# Var squad
-ogUrl = ''
-ogUrlDomain = ''
+## Logging
 tab = '    '
-totalDepth = 0
-# lastCrawledUrlAtDepth = {} # Depth is key, link/url is value
-crawledUrlDict = {} # Checklink is key, URL class is value
-emailList = []
-phoneList = []
-errorCount = 0
 jobId = str(uuid.uuid4())
 timestamp = datetime.now().strftime('%Y-%m-%d-%H-%M-%S')
 debugLogPath = defaultLogPath + '1-debug/' + 'debug_' + timestamp + '.txt'
@@ -32,9 +24,24 @@ urlLogPath = defaultLogPath + '2-url/' + 'url_' + timestamp + '.txt'
 emailLogPath = defaultLogPath + '3-email/' + 'email_' + timestamp + '.txt'
 phoneLogPath = defaultLogPath + '4-phone/' + 'phone_' + timestamp + '.txt'
 # fileLogPath = defaultLogPath + '5-file/' + 'file_' + timestamp + '/'
-errorUnableToCrawl = 0
-errorTooManyBackLinks = 1
-errorUrlNotInDict = 2
+
+## Error Codes
+errorUnableToCrawl = 'Unable to crawl'
+errorTooManyBackLinks = 'Too many back links'
+errorUrlNotInDict = 'URL not in dictionary'
+
+## Storage Lists/Dicts
+# lastCrawledUrlAtDepth = {} # Depth is key, link/url is value
+urlDict = {} # Checklink is key, URL class is value
+emailList = []
+phoneList = []
+# fileDict = {} # Checklink is key, File class is value
+
+## Blanks
+ogUrl = ''
+ogUrlDomain = ''
+totalDepth = 0
+errorCount = 0
 
 # TODO: Add job info (i.e. total job time) at end output
 # TODO: Once done with writeLog, remove crawl() completely. We should iterate through the tree of links rather than use recursion.
@@ -43,9 +50,8 @@ errorUrlNotInDict = 2
 
 
 class DebugError: # TODO: Add my own exception messages for custom errors
-    def __init__(self, code, url, exceptionType, exception):
-        errorMessage = ['Unable to crawl', 'Too many back links', 'URL not in dictionary']
-        self.message = errorMessage[code]
+    def __init__(self, message, url, exceptionType, exception):
+        self.message = message
         self.url = url
         self.code = code
         self.exceptionType = exceptionType
@@ -133,12 +139,12 @@ class URL:
 
 def crawl(currentUrl, currentDepth):
     currentUrl = getRebuiltLink(currentUrl)
-    hasCrawled = getCheckLink(currentUrl) in crawledUrlDict
+    hasCrawled = getCheckLink(currentUrl) in urlDict
 
     if (currentDepth > 0 and not hasCrawled):
         currentCrawlJob = URL(currentUrl, currentDepth)
         currentCrawlJob.setSoup()
-        crawledUrlDict[getCheckLink(currentCrawlJob.url)] = currentCrawlJob
+        urlDict[getCheckLink(currentCrawlJob.url)] = currentCrawlJob
 
         if (isBetaUrl(currentCrawlJob.url, currentCrawlJob.depth) and isQualifiedCrawlUrl(currentCrawlJob.url)):
             currentCrawlJob.logEntry = 'Crawling...'
@@ -179,15 +185,15 @@ def crawl(currentUrl, currentDepth):
         currentCheckLink = getCheckLink(currentUrl)
         isRelog = isQualifiedRelog(currentUrl, currentDepth)
 
-        currentRelogJob = crawledUrlDict[currentCheckLink]
+        currentRelogJob = urlDict[currentCheckLink]
         currentRelogJob.depth = currentDepth
         currentRelogJob.logEntry = "Already crawled"
 
         writeLog(currentRelogJob)
         
         if (isRelog):
-            if (currentDepth > crawledUrlDict[currentCheckLink].depth): # if currentDepth is greater than when we last crawled this URL, update the depth so we don't recrawl (after this recrawl) at anything equal to or less
-                crawledUrlDict[currentCheckLink].depth = currentDepth
+            if (currentDepth > urlDict[currentCheckLink].depth): # if currentDepth is greater than when we last crawled this URL, update the depth so we don't recrawl (after this recrawl) at anything equal to or less
+                urlDict[currentCheckLink].depth = currentDepth
 
             for item in currentRelogJob.parsedList:
 
@@ -364,12 +370,12 @@ def isQualifiedPhone(url): # Return boolean on whether the passed item is a vali
 
 
 def isQualifiedRelog(url, currentDepth): # If depth is greater than when previously crawled, there is more to be discovered, hence the recrawl. Otherwise check relog setting
-    if (getCheckLink(url) not in crawledUrlDict):
+    if (getCheckLink(url) not in urlDict):
         writeLog(DebugError(errorUrlNotInDict, url, None, None)) # Tried to recrawl non-existant URL
 
         return False
 
-    elif (relog or currentDepth > crawledUrlDict[getCheckLink(url)].depth):
+    elif (relog or currentDepth > urlDict[getCheckLink(url)].depth):
         return True
 
     return False
