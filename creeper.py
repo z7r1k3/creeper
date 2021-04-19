@@ -44,36 +44,33 @@ phoneList = []
 
 ## Blanks
 errorCount = 0
+debugCount = 0
+jobStats = ''
 ogUrl = ''
 ogUrlDomain = ''
 startTime = None
 totalDepth = 0
 
-# TODO: Add job info (i.e. total job time) at end output
 # TODO: Once done with writeLog, remove crawl() completely. We should iterate through the tree of links rather than use recursion.
 #       Otherwise, a max recursion can be hit, and time complexity increases exponentially rather than linearly.
 
 
 
-class DebugError: # TODO: Add exception messages for custom errors
+class DebugError:
     def __init__(self, code, message, url, exceptionType, exception):
         global errorCount
         errorCount += 1
+        global debugCount
+        debugCount += 1
         
         self.message = message
         self.url = url
         self.code = code
         self.exceptionType = exceptionType
         self.exception = exception
-        self.count = errorCount
-
-    def getPrintOutput(self):
-        output = '#' + str(self.count) + ': ERROR_' + str(self.code) + ' ' + self.message + ' | ' + self.url
-
-        return output
 
     def getLogOutput(self):
-        output = '#' + str(self.count) + ': ERROR_' + str(self.code) + ' ' + self.message + ' | ' + self.url
+        output = '#' + str(debugCount) + ' ERROR_' + str(self.code) + ': ' + self.message + ' | ' + self.url
 
         if (self.exceptionType != None):
             output += '\n\n' + str(self.exceptionType)
@@ -85,13 +82,39 @@ class DebugError: # TODO: Add exception messages for custom errors
 
         return output
 
+    def getPrintOutput(self):
+        output = 'ERROR_' + str(self.code) + ': ' + self.message + ' | ' + self.url
 
-class DebugInfo: # TODO: Utilize this
+        return output
+
+
+class DebugInfo:
     def __init__(self, url, header, subheader, body):
+        global debugCount
+        debugCount += 1
+
         self.url = url
         self.header = header
         self.subheader = subheader
         self.body = body
+
+    def getLogOutput(self):
+        output = '#' + str(debugCount) + ' INFO: ' + self.header + ' | ' + self.url
+
+        if (self.subheader != None):
+            output += '\n\n' + self.subheader
+
+        if (self.body != None):
+            output += '\n\n' + self.body
+
+        output += '\n\n\n'
+
+        return output
+
+    def getPrintOutput(self):
+        output = 'INFO: ' + self.header + ' | ' + self.url
+
+        return output
 
 
 class Email:
@@ -324,6 +347,7 @@ def getPrefix(url): # Return prefix only of passed URL (i.e. http://, ftp://, et
         index = url.find('//')
         return url[:index+2]
 
+    writeLog(DebugInfo(url, 'Prefix unknown', 'Passed URL does not contain known prefix', 'getPrefix()\nReturning \'http://\''))
     return 'http://' # Default to this prefix if none is included
 
 
@@ -466,8 +490,7 @@ def isWebFile(url): # Return boolean on whether the passed URL ends with one of 
 
 
 def writeLog(entry):
-    if (type(entry) is DebugError):
-        
+    if (type(entry) is DebugError or type(entry) is DebugInfo):
         if (logLevel > 0):
             print(entry.getPrintOutput())
 
@@ -599,10 +622,13 @@ if (logLevel > 0):
 
         for phone in phoneList:
             print(phone)
-    
-    # Add job info here, i.e. total job time in seconds
 
-print('\n\n\nErrorCount: ' + str(errorCount))
-print(str(timedelta.total_seconds(datetime.now() - startTime)) + ' seconds')
-print('Timestamp: ' + timestamp)
+jobStats = ('\n\n\n**Job Stats**\n' +
+    'Errors: ' + str(errorCount) + '\n' +
+    str(timedelta.total_seconds(datetime.now() - startTime)) + ' seconds\n' +
+    'Timestamp: ' + timestamp
+)
+
+print(jobStats)
 print('JobID: ' + jobId)
+debugLog.write(jobStats)
