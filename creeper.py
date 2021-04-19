@@ -78,12 +78,12 @@ class DebugError:
         if (self.exception != None):
             output += '\n\n' + str(self.exception)
         
-        output += '\n\n\n'
+        output += '\n\n\n\n'
 
         return output
 
     def getPrintOutput(self):
-        output = 'ERROR_' + str(self.code) + ': ' + self.message + ' | ' + self.url
+        output = 'Entry#' + str(debugCount) + ' | ERROR_' + str(self.code) + ': ' + self.message + ' | ' + self.url
 
         return output
 
@@ -107,12 +107,12 @@ class DebugInfo:
         if (self.body != None):
             output += '\n\n' + self.body
 
-        output += '\n\n\n'
+        output += '\n\n\n\n'
 
         return output
 
     def getPrintOutput(self):
-        output = 'INFO: ' + self.header + ' | ' + self.url
+        output = 'Entry#' + str(debugCount) + ' | INFO: ' + self.header + ' | ' + self.url
 
         return output
 
@@ -490,8 +490,14 @@ def isWebFile(url): # Return boolean on whether the passed URL ends with one of 
 
 
 def writeLog(entry):
-    if (type(entry) is DebugError or type(entry) is DebugInfo):
+    if (type(entry) is DebugError):
         if (logLevel > 0):
+            print(entry.getPrintOutput())
+
+        debugLog.write(entry.getLogOutput())
+
+    elif (type(entry) is DebugInfo):
+        if (logLevel > 1):
             print(entry.getPrintOutput())
 
         debugLog.write(entry.getLogOutput())
