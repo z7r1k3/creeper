@@ -1,5 +1,5 @@
-# Creeper v1.3.3
-A Web Crawler and Scraper, built in Python 3.9.2
+# Creeper
+A Web Crawler and Scraper, built in Python 3.9
 
 Works with HTTP(S) and FTP(S) links.
 
