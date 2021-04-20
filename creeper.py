@@ -1,30 +1,25 @@
-# Creeper: A Cross-Platform Web Crawler and Scraper
+### Creeper: A Cross-Platform Web Crawler and Scraper
 
 from bs4 import BeautifulSoup
-from datetime import datetime
+from datetime import datetime, timedelta
+from urllib import request
 import traceback
-import urllib.request
 import uuid
 
-# Config var squad
-defaultLogPath = 'logs/' # Determines where logs are stored. Make sure to put a '/' at the end
-fileEndings = ['.html', '.htm', '.php', '.asp', '.cfm'] # Determines what URLs/files will always be crawled, even if ftp(s)://
-disqualifyEndings = ['/LICENSE'] # If a URL ends with any of these, do not consider a qualified URL for crawling. Do NOT put '/' at the end
-disqualifyBeginnings = ['mailto:', 'tel:'] # If a URL starts with any of these, do not consider a qualified URL for crawling
-markupTags = ['a', 'link', 'script', 'iframe', 'img'] # Determines tags parsed from webpage source code
-attributes = ['href', 'src'] # Determines attributes checked from tags to retrieve URLs
-ignoreList = [None, '#']
 
-# Var squad
-ogUrl = ''
-ogUrlDomain = ''
+
+## Config Lists
+attributeList = ['href', 'src'] # Determines attributes checked from tags to retrieve URLs
+defaultLogPath = 'logs/' # Determines where logs are stored. Make sure to put a '/' at the end
+disqualifyBeginnings = ['mailto:', 'tel:'] # If a URL starts with any of these, do not consider a qualified URL for crawling
+disqualifyEndings = ['/LICENSE'] # If a URL ends with any of these, do not consider a qualified URL for crawling. Do NOT put '/' at the end
+fileEndings = ['.html', '.htm', '.php', '.asp', '.cfm'] # Determines what URLs/files will always be crawled, even if ftp(s)://
+ignoreList = [None, '#'] # If a URL, etc. is equal to any of these, it will be skipped
+markupTags = ['a', 'atom:link', 'iframe', 'img', 'link', 'script'] # Determines tags parsed from webpage source code
+
+## Logging
+debugLogDivider = '=================================================='
 tab = '    '
-totalDepth = 0
-# lastCrawledUrlAtDepth = {} # Depth is key, link/url is value
-crawledUrlDict = {} # Checklink is key, URL class is value
-emailList = []
-phoneList = []
-errorCount = 0
 jobId = str(uuid.uuid4())
 timestamp = datetime.now().strftime('%Y-%m-%d-%H-%M-%S')
 debugLogPath = defaultLogPath + '1-debug/' + 'debug_' + timestamp + '.txt'
@@ -32,35 +27,88 @@ urlLogPath = defaultLogPath + '2-url/' + 'url_' + timestamp + '.txt'
 emailLogPath = defaultLogPath + '3-email/' + 'email_' + timestamp + '.txt'
 phoneLogPath = defaultLogPath + '4-phone/' + 'phone_' + timestamp + '.txt'
 # fileLogPath = defaultLogPath + '5-file/' + 'file_' + timestamp + '/'
-errorUnableToCrawl = 0
-errorTooManyBackLinks = 1
-errorUrlNotInDict = 2
 
-# TODO: Add job info (i.e. total job time) at end output
-# TODO: Once done with writeLog, remove crawl() completely. We should iterate through the tree of links rather than use recursion.
-#       Otherwise, a max recursion can be hit, and time complexity increases exponentially rather than linearly.
+## Error Codes
+codeUnableToCrawl = 0
+codeTooManyBackLinks = 1
+
+## Storage Lists/Dicts
+# lastCrawledUrlAtDepth = {} # Depth is key, link/url is value
+urlDict = {} # Checklink is key, URL class is value
+emailList = []
+phoneList = []
+# fileDict = {} # Checklink is key, File class is value
+
+## Blanks
+errorCount = 0
+debugCount = 0
+jobStats = ''
+ogUrl = ''
+ogUrlDomain = ''
+startTime = None
+totalDepth = 0
 
 
 
-class DebugError: # TODO: Add my own exception messages for custom errors
-    def __init__(self, code, url, exceptionType, exception):
-        errorMessage = ['Unable to crawl', 'Too many back links', 'URL not in dictionary']
-        self.message = errorMessage[code]
+class DebugError:
+    def __init__(self, code, message, url, exceptionType, exception):
+        global errorCount
+        errorCount += 1
+        global debugCount
+        debugCount += 1
+        
+        self.message = message
         self.url = url
         self.code = code
         self.exceptionType = exceptionType
         self.exception = exception
 
-        incrErrorCount()
-        self.count = errorCount
+    def getLogOutput(self):
+        output = '#' + str(debugCount) + ' ERROR_' + str(self.code) + ': ' + self.message + ' | ' + self.url
+
+        if (self.exceptionType != None):
+            output += '\n\n' + str(self.exceptionType)
+
+        if (self.exception != None):
+            output += '\n\n\n' + str(self.exception)
+        
+        output += '\n\n\n' + debugLogDivider + '\n\n\n'
+
+        return output
+
+    def getPrintOutput(self):
+        output = 'Entry#' + str(debugCount) + ' | ERROR_' + str(self.code) + ': ' + self.message + ' | ' + self.url
+
+        return output
 
 
-class DebugInfo: # TODO: Utilize this
+class DebugInfo:
     def __init__(self, url, header, subheader, body):
+        global debugCount
+        debugCount += 1
+
         self.url = url
         self.header = header
         self.subheader = subheader
         self.body = body
+
+    def getLogOutput(self):
+        output = '#' + str(debugCount) + ' INFO: ' + self.header + ' | ' + self.url
+
+        if (self.subheader != None):
+            output += '\n\n' + self.subheader
+
+        if (self.body != None):
+            output += '\n\n\n' + self.body
+
+        output += '\n\n\n' + debugLogDivider + '\n\n\n'
+
+        return output
+
+    def getPrintOutput(self):
+        output = 'Entry#' + str(debugCount) + ' | INFO: ' + self.header + ' | ' + self.url
+
+        return output
 
 
 class Email:
@@ -123,9 +171,9 @@ class URL:
             code = ''
             
             try: # Read and store code for parsing
-                code = urllib.request.urlopen(self.url).read()
+                code = request.urlopen(self.url).read()
             except Exception as exception:
-                writeLog(DebugError(errorUnableToCrawl, self.url, exception, traceback.format_exc()))
+                writeLog(DebugError(codeUnableToCrawl, 'Unable to crawl', self.url, exception, traceback.format_exc()))
 
             self.soup = BeautifulSoup(code, features='lxml')
 
@@ -133,12 +181,13 @@ class URL:
 
 def crawl(currentUrl, currentDepth):
     currentUrl = getRebuiltLink(currentUrl)
-    hasCrawled = getCheckLink(currentUrl) in crawledUrlDict
+    hasCrawled = getCheckLink(currentUrl) in urlDict
 
     if (currentDepth > 0 and not hasCrawled):
         currentCrawlJob = URL(currentUrl, currentDepth)
         currentCrawlJob.setSoup()
-        crawledUrlDict[getCheckLink(currentCrawlJob.url)] = currentCrawlJob
+        urlDict[getCheckLink(currentCrawlJob.url)] = currentCrawlJob
+        hasQualifiedAttributes = False
 
         if (isBetaUrl(currentCrawlJob.url, currentCrawlJob.depth) and isQualifiedCrawlUrl(currentCrawlJob.url)):
             currentCrawlJob.logEntry = 'Crawling...'
@@ -146,13 +195,16 @@ def crawl(currentUrl, currentDepth):
         writeLog(currentCrawlJob)
 
         for tag in getTagList(currentCrawlJob.url, currentCrawlJob.soup):
-            parsedUrl = parseTag(currentCrawlJob.url, tag)
+            parsedUrl = getParsedAttribute(currentCrawlJob.url, tag)
+
+            if (parsedUrl != None):
+                hasQualifiedAttributes = True
 
             if (parsedUrl in ignoreList): continue # Barrier to prevent processing None, etc.
 
             # Merge path with domain if the URL is missing domain
             if (not hasPrefix(parsedUrl) and not isQualifiedEmail(parsedUrl) and not isQualifiedPhone(parsedUrl)):
-                parsedUrl = mergeUrl(currentCrawlJob.url, parsedUrl)
+                parsedUrl = getMergedUrl(currentCrawlJob.url, parsedUrl)
 
             if (parsedUrl not in currentCrawlJob.parsedList):
                 currentCrawlJob.parsedList.append(parsedUrl)
@@ -175,19 +227,26 @@ def crawl(currentUrl, currentDepth):
         
         # lastCrawledUrlAtDepth[currentDepth] = currentUrl
 
+        if (not hasQualifiedAttributes):
+            debugHeader = 'No attributes detected'
+            debugSubheader = 'The tags were parsed from the URL, but no qualified attributes were detected'
+            debugBody = '**SOURCE**\n\n' + str(currentCrawlJob.soup) # Leave this in DebugInfo so when logs are requested the user doesn't have to upload more than one file
+
+            writeLog(DebugInfo(currentCrawlJob.url, debugHeader, debugSubheader, debugBody))
+
     elif (currentDepth > 0): # If URL has already been crawled, use the previously stored URL's if redundant logging is enabled or URL has higher depth.
         currentCheckLink = getCheckLink(currentUrl)
         isRelog = isQualifiedRelog(currentUrl, currentDepth)
 
-        currentRelogJob = crawledUrlDict[currentCheckLink]
+        currentRelogJob = urlDict[currentCheckLink]
         currentRelogJob.depth = currentDepth
         currentRelogJob.logEntry = "Already crawled"
 
         writeLog(currentRelogJob)
         
         if (isRelog):
-            if (currentDepth > crawledUrlDict[currentCheckLink].depth): # if currentDepth is greater than when we last crawled this URL, update the depth so we don't recrawl (after this recrawl) at anything equal to or less
-                crawledUrlDict[currentCheckLink].depth = currentDepth
+            if (currentDepth > urlDict[currentCheckLink].depth): # If currentDepth is greater than when we last crawled this URL, update the depth so we don't recrawl (after this recrawl) at anything equal to or less
+                urlDict[currentCheckLink].depth = currentDepth
 
             for item in currentRelogJob.parsedList:
 
@@ -203,20 +262,6 @@ def crawl(currentUrl, currentDepth):
 
                     elif (isQualifiedPhone(item)):
                         writeLog(Phone(item))
-
-
-def ftpParse(soup): # Get contents of FTP soup and return all file paths as a list
-    lines = str(soup).splitlines()
-    paths = []
-
-    for singleLine in lines:
-        lineItems = [x for x in singleLine.split(' ') if x != ''] # Extract all items from that line, separating by whitespace and excluding empty items i.e. ''
-
-        del lineItems[0:8] # Index 8 and further are all parts of the file path. Prior to that are dates, owners, and other unrelated items
-
-        paths.append('%20'.join(lineItems)) # If there are multiple lineItems at this point, the path has at least one space in it and needs '%20' in the URL to represent each
-            
-    return paths
 
 
 def getCheckLink(url): # Return a uniform link so that links don't get added twice (i.e. the 'http://' and 'https://' versions)
@@ -236,6 +281,69 @@ def getDomain(url): # Return domain only of passed URL (i.e. 'example.org' if pa
     # Return from start of string to first '/'
     return url[:url.find('/')]
 
+
+def getFtpParse(soup): # Get contents of FTP soup and return all file paths as a list
+    lines = str(soup).splitlines()
+    paths = []
+
+    for singleLine in lines:
+        lineItems = [x for x in singleLine.split(' ') if x != ''] # Extract all items from that line, separating by whitespace and excluding empty items i.e. ''
+
+        del lineItems[0:8] # Index 8 and further are all parts of the file path. Prior to that are dates, owners, and other unrelated items
+
+        paths.append('%20'.join(lineItems)) # If there are multiple lineItems at this point, the path has at least one space in it and needs '%20' in the URL to represent each
+            
+    return paths
+
+
+def getMergedUrl(url, path): # Merge passed domain with passed path (i.e. 'example.org' and '/about-us' to 'http://example.org/about-us')
+    ogPath = path
+    prefix = getPrefix(url)
+
+    if (url.endswith('/')): url = url[:-1] # Trim last '/' in domain if applicable
+
+    # If current domain is a webfile (i.e. ends with '.html') we need to remove the file before merging the path
+    if (isWebFile(url)): url = url[:url.rindex('/')] # Remove everything after and including new last '/'
+    
+    while (path.startswith('#/') or path.startswith('/#/')):
+        path = path[path.index('#')+1:] # Remove everything up to and including the first '#' from path
+
+
+    if (path.startswith('/')): # i.e. /example/path should start at the raw domain
+        return prefix + getDomain(url) + path
+
+    # Handle '..' backpage href shortcuts
+    while (path.startswith('..')):
+        path = path[path.index('..')+3:] # Remove everything up to and including the first '..' from path
+
+        try:
+            url = prefix + getStrippedUrl(url)[:getStrippedUrl(url).rindex('/')] # Remove everything after new last '/', essentially going back a folder
+        except Exception as exception:
+            writeLog(DebugError(codeTooManyBackLinks, 'Too many back links', ogPath, exception, traceback.format_exc()))
+
+    if (not url == prefix): # If domain is more than just a prefix like http://
+        return str(prefix + getStrippedUrl(url) + '/' + path)
+
+    return '' # If we erased the domain above, we have a '..' back link with no previous folder to go back to, so we return nothing as it is worthless
+
+
+def getParsedAttribute(parentUrl, tag):
+    attribute = ''
+
+    if (isHtmlParse(parentUrl)): # Is a crawlable web file, FTP or otherwise
+        for u in attributeList:
+            attribute = tag.get(u)
+
+            if (attribute != None):
+                break
+
+    # Is FTP and not a web file
+    else:
+        attribute = tag
+
+    return attribute
+
+
 def getPrefix(url): # Return prefix only of passed URL (i.e. http://, ftp://, etc.)
     if (isQualifiedEmail(url) or isQualifiedPhone(url)):
         return ''
@@ -243,6 +351,12 @@ def getPrefix(url): # Return prefix only of passed URL (i.e. http://, ftp://, et
     if ('//' in url and not url.startswith('//')):
         index = url.find('//')
         return url[:index+2]
+
+    debugHeader = 'Prefix not detected'
+    debugSubheader = 'The passed URL was scanned, but no prefix was detected'
+    debugBody = 'Location: getPrefix()\nResult: Returning \'http://\''
+
+    writeLog(DebugInfo(url, debugHeader, debugSubheader, debugBody))
 
     return 'http://' # Default to this prefix if none is included
 
@@ -285,11 +399,23 @@ def getStrippedUrl(url): # Returns the bare URL after removing http, https, www,
 
 
 def getTagList(url, soup): # Return a list of links
+    tagList = []
+
     if (isHtmlParse(url)): # If it is not an FTP URL, or it is but it's a webpage (i.e. .html file), bs can parse for the tags
-        return soup.findAll(markupTags)
+        tagList = soup.findAll(markupTags)
     
-    # If it is an FTP URL, and not a webpage (i.e. not a .html file), return resulting list of tags from ftpParse()
-    return ftpParse(soup)
+    else:# If it is an FTP URL, and not a webpage (i.e. not a .html file), return resulting list of tags from getFtpParse()
+        tagList = getFtpParse(soup)
+
+
+    if (len(tagList) == 0):
+        debugHeader = 'No tags detected'
+        debugSubheader = 'The URL was parsed, but no tags were detected'
+        debugBody = '**SOURCE**\n\n' + str(soup)
+
+        writeLog(DebugInfo(url, debugHeader, debugSubheader, debugBody))
+
+    return tagList
 
 
 def hasPrefix(url):
@@ -315,7 +441,7 @@ def isHtmlParse(url):
     return (not ftp) or (ftp and webFile) # Not FTP, or is FTP with webfile (.html, etc.)
 
 
-def isQualifiedCrawlUrl(url): # Return boolean on whether the passed item is crawlable or not (i.e. not a mailto: or .mp3 file) TODO: Refactor this?
+def isQualifiedCrawlUrl(url): # Return boolean on whether the passed URL is crawlable or not (i.e. not a mailto: or .mp3 file) TODO: Refactor this?
     if (getStrippedUrl(url).endswith('..')): return False # Back links
 
     for u in disqualifyEndings:
@@ -364,12 +490,8 @@ def isQualifiedPhone(url): # Return boolean on whether the passed item is a vali
 
 
 def isQualifiedRelog(url, currentDepth): # If depth is greater than when previously crawled, there is more to be discovered, hence the recrawl. Otherwise check relog setting
-    if (getCheckLink(url) not in crawledUrlDict):
-        writeLog(DebugError(errorUrlNotInDict, url, None, None)) # Tried to recrawl non-existant URL
-
-        return False
-
-    elif (relog or currentDepth > crawledUrlDict[getCheckLink(url)].depth):
+    # Make sure to pass a URL that is already in urlDict. It will throw an exception otherwise, which is to be expected
+    if (relog or currentDepth > urlDict[getCheckLink(url)].depth):
         return True
 
     return False
@@ -385,71 +507,18 @@ def isWebFile(url): # Return boolean on whether the passed URL ends with one of 
     return False
 
 
-def mergeUrl(url, path): # Merge passed domain with passed path (i.e. 'example.org' and '/about-us' to 'http://example.org/about-us')
-    ogPath = path
-    prefix = getPrefix(url)
-
-    if (url.endswith('/')): url = url[:-1] # Trim last '/' in domain if applicable
-
-    # If current domain is a webfile (i.e. ends with '.html') we need to remove the file before merging the path
-    if (isWebFile(url)): url = url[:url.rindex('/')] # Remove everything after and including new last '/'
-    
-    while (path.startswith('#/') or path.startswith('/#/')):
-        path = path[path.index('#')+1:] # Remove everything up to and including the first '#' from path
-
-
-    if (path.startswith('/')): # i.e. /example/path should start at the raw domain
-        return prefix + getDomain(url) + path
-
-    # Handle '..' backpage href shortcuts
-    while (path.startswith('..')):
-        path = path[path.index('..')+3:] # Remove everything up to and including the first '..' from path
-
-        try:
-            url = prefix + getStrippedUrl(url)[:getStrippedUrl(url).rindex('/')] # Remove everything after new last '/', essentially going back a folder
-        except Exception as exception:
-            writeLog(DebugError(errorTooManyBackLinks, ogPath, exception, traceback.format_exc()))
-
-    if (not url == prefix): # If domain is more than just a prefix like http://
-        return str(prefix + getStrippedUrl(url) + '/' + path)
-
-    return '' # If we erased the domain above, we have a '..' back link with no previous folder to go back to, so we return nothing as it is worthless
-
-        
-def parseTag(parentUrl, tag):
-    result = ''
-
-    if (isHtmlParse(parentUrl)): # Is a crawlable web file, FTP or otherwise
-        for attribute in attributes:
-            result = tag.get(attribute)
-
-            if (result != None):
-                break
-
-    # Is FTP and not a web file
-    else:
-        result = tag
-
-    return result
-
-
-def incrErrorCount():
-    global errorCount
-    errorCount += 1
-
-
-def writeLog(entry): # entry can be either a string (URL, Phone, Email) or an Error()
+def writeLog(entry):
     if (type(entry) is DebugError):
-        errorMessage = '#' + str(entry.count) + ': ERROR_' + str(entry.code) + ' ' + entry.message + ' | ' + entry.url
+        if (logLevel > 0):
+            print(entry.getPrintOutput())
 
-        if (logLevel > 0): print(errorMessage)
+        debugLog.write(entry.getLogOutput())
 
-        debugLog.write(errorMessage)
+    elif (type(entry) is DebugInfo):
+        if (logLevel > 1):
+            print(entry.getPrintOutput())
 
-        if (entry.exceptionType is not None and entry.exception is not None):
-            debugLog.write('\n\n' + str(entry.exceptionType) + '\n\n' + entry.exception + '\n\n\n')
-        else:
-            debugLog.write('\n\n\n')
+        debugLog.write(entry.getLogOutput())
 
     elif (type(entry) is URL):
         # logLevel
@@ -466,15 +535,15 @@ def writeLog(entry): # entry can be either a string (URL, Phone, Email) or an Er
             urlLog.write(entry.getLogOutput() + '\n')
 
     elif (type(entry) is Email):
-        if (scrape and entry not in emailList):
-            emailList.append(entry.getPrintOutput()) # Will print at end regardless of log level
+        if (scrape and (entry.email not in emailList)):
+            emailList.append(entry.getPrintOutput()) # Will print at end regardless of logLevel
 
             if (save):
                 emailLog.write(entry.getLogOutput() + '\n')
 
     elif (type(entry) is Phone):
-        if (scrape and entry not in phoneList):
-            phoneList.append(entry.getPrintOutput()) # Will print at end regardless of log level
+        if (scrape and (entry.phone not in phoneList)):
+            phoneList.append(entry.getPrintOutput()) # Will print at end regardless of logLevel
 
             if (save):
                 phoneLog.write(entry.getLogOutput() + '\n')
@@ -511,7 +580,7 @@ n: no
         save = 'y'
 
     relog =  input('''
-Would you like to log redundant URL's? Doing so increases overall crawling duration.
+Would you like to log redundant URLs? Doing so increases overall crawling duration.
 y: yes
 n: no (Default)
 ''')
@@ -555,6 +624,8 @@ if (save):
         phoneLog.write('JobID: ' + jobId + '\n\n')
         
 # Begin crawling/scraping
+startTime = datetime.now()
+
 for link in urlInputList: # Crawl for each URL the user inputs
     ogUrl = link
     ogUrlDomain = getDomain(ogUrl)
@@ -575,9 +646,13 @@ if (logLevel > 0):
 
         for phone in phoneList:
             print(phone)
-    
-    # Add job info here, i.e. total job time in seconds
 
-print('\n\n\nErrorCount: ' + str(errorCount))
-print('Timestamp: ' + timestamp)
+jobStats = ('**Job Stats**\n' +
+    'Errors: ' + str(errorCount) + '\n' +
+    str(timedelta.total_seconds(datetime.now() - startTime)) + ' seconds\n' +
+    'Timestamp: ' + timestamp
+)
+
+print('\n\n\n' + jobStats)
 print('JobID: ' + jobId)
+debugLog.write(jobStats)
