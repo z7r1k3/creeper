@@ -718,9 +718,18 @@ if save:
 start_time = datetime.now()
 
 for link in url_input_list:  # Crawl for each URL the user inputs
+    debug_header = 'Starting crawl job'
+    debug_subheader = 'START: ' + str(datetime.utcnow()) + ' UTC'
+    debug_body = ('CONFIG:' +
+                  '\ntotal_depth = ' + str(total_depth) +
+                  '\nscrape = ' + str(scrape) +
+                  '\nsave = ' + str(save) +
+                  '\nrelog = ' + str(relog) +
+                  '\nlog_level = ' + str(log_level))
     og_url = link
     og_url_domain = get_domain(og_url)
 
+    write_log(DebugInfo(link, debug_header, debug_subheader, debug_body))
     crawl(link, total_depth)
 
     if save:
