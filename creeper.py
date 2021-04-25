@@ -87,7 +87,7 @@ class DebugError:
                   )
 
         if self.exception is not None:
-            output += '\n\n' + str(self.exception)
+            output += '\n\n\n' + str(self.exception)
 
         if self.traceback is not None:
             output += '\n\n\n' + str(self.traceback)
@@ -116,11 +116,13 @@ class DebugInfo:
         self.body = body
 
     def get_log_output(self):
-        output = ('#' + str(debug_count) +
-                  ' INFO: ' + self.header + ' | ' + self.url)
+        output = ('#' + str(debug_count) + ' INFO: ' + self.header)
+
+        if self.url is not None:
+            output += ' | ' + self.url
 
         if self.subheader is not None:
-            output += '\n\n' + self.subheader
+            output += '\n\n\n' + self.subheader
 
         if self.body is not None:
             output += '\n\n\n' + self.body
@@ -130,8 +132,10 @@ class DebugInfo:
         return output
 
     def get_print_output(self):
-        output = ('Entry#' + str(debug_count) +
-                  ' | INFO: ' + self.header + ' | ' + self.url)
+        output = ('Entry#' + str(debug_count) + ' | INFO: ' + self.header)
+
+        if self.url is not None:
+            output += ' | ' + self.url
 
         return output
 
@@ -262,7 +266,7 @@ def crawl(current_url, current_depth):
             debug_header = 'No attributes detected'
             debug_subheader = ('The tags were parsed from the URL, ' +
                                'but no qualified attributes were detected')
-            debug_body = '**SOURCE**\n\n' + str(current_crawl_job.soup)
+            debug_body = 'SOURCE:\n\n' + str(current_crawl_job.soup)
 
             write_log(DebugInfo(current_crawl_job.url,
                                 debug_header,
@@ -477,7 +481,7 @@ def get_tag_list(url, soup):  # Return a list of links
     if len(tag_list) == 0:
         debug_header = 'No tags detected'
         debug_subheader = 'The URL was parsed, but no tags were detected'
-        debug_body = '**SOURCE**\n\n' + str(soup)
+        debug_body = 'SOURCE:\n\n' + str(soup)
 
         write_log(DebugInfo(url, debug_header, debug_subheader, debug_body))
 
@@ -716,20 +720,23 @@ if save:
 
 # Begin crawling/scraping
 start_time = datetime.now()
+debug_header = 'Starting crawl job'
+debug_subheader = 'START: ' + str(datetime.utcnow()) + ' UTC'
+debug_body = ('CONFIG:' +
+              '\ntotal_depth = ' + str(total_depth) +
+              '\nscrape = ' + str(scrape) +
+              '\nsave = ' + str(save) +
+              '\nrelog = ' + str(relog) +
+              '\nlog_level = ' + str(log_level) +
+              '\nurl_input_list =' +
+              '\n' + tab + ('\n' + tab).join(map(str, url_input_list)))
+
+write_log(DebugInfo(None, debug_header, debug_subheader, debug_body))
 
 for link in url_input_list:  # Crawl for each URL the user inputs
-    debug_header = 'Starting crawl job'
-    debug_subheader = 'START: ' + str(datetime.utcnow()) + ' UTC'
-    debug_body = ('CONFIG:' +
-                  '\ntotal_depth = ' + str(total_depth) +
-                  '\nscrape = ' + str(scrape) +
-                  '\nsave = ' + str(save) +
-                  '\nrelog = ' + str(relog) +
-                  '\nlog_level = ' + str(log_level))
     og_url = link
     og_url_domain = get_domain(og_url)
 
-    write_log(DebugInfo(link, debug_header, debug_subheader, debug_body))
     crawl(link, total_depth)
 
     if save:
