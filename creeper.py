@@ -269,6 +269,7 @@ def crawl(current_url, current_depth):
         is_relog = is_qualified_relog(current_url, current_depth)
 
         current_relog_job = deepcopy(url_dict[current_check_link])
+        current_relog_job.depth = current_depth
         current_relog_job.log_entry = "Already crawled"
 
         write_log(current_relog_job)
