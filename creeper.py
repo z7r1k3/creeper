@@ -3,6 +3,7 @@
 # Built in Python 3.9
 
 from bs4 import BeautifulSoup
+from copy import deepcopy
 from datetime import datetime, timedelta
 from urllib import request
 import traceback
@@ -87,7 +88,7 @@ class DebugError:
                   )
 
         if self.exception is not None:
-            output += '\n\n' + str(self.exception)
+            output += '\n\n\n' + str(self.exception)
 
         if self.traceback is not None:
             output += '\n\n\n' + str(self.traceback)
@@ -116,11 +117,13 @@ class DebugInfo:
         self.body = body
 
     def get_log_output(self):
-        output = ('#' + str(debug_count) +
-                  ' INFO: ' + self.header + ' | ' + self.url)
+        output = ('#' + str(debug_count) + ' INFO: ' + self.header)
+
+        if self.url is not None:
+            output += ' | ' + self.url
 
         if self.subheader is not None:
-            output += '\n\n' + self.subheader
+            output += '\n\n\n' + self.subheader
 
         if self.body is not None:
             output += '\n\n\n' + self.body
@@ -130,8 +133,10 @@ class DebugInfo:
         return output
 
     def get_print_output(self):
-        output = ('Entry#' + str(debug_count) +
-                  ' | INFO: ' + self.header + ' | ' + self.url)
+        output = ('Entry#' + str(debug_count) + ' | INFO: ' + self.header)
+
+        if self.url is not None:
+            output += ' | ' + self.url
 
         return output
 
@@ -167,51 +172,39 @@ class Phone:
 
 
 class URL:
-    def __init__(self, url, depth, log_entry=None, soup=None):
+    def __init__(self, url, depth, log_entry=None, source=None):
         self.url = url
         self.depth = depth  # Current, not total, depth level
         self.log_entry = log_entry
-        self.soup = soup
-        self.indent = tab * (total_depth - self.depth)
-        self.log_url = get_rebuilt_link(self.url).replace(' ', '')
+        self.source = str(source)  # Never let this be a soup, always str
+        self.log_url = get_rebuilt_link(url)
 
         # Blank squad
         self.parsed_list = []
 
     def get_log_output(self):
-        return self.indent + self.log_url
+        indent = tab * (total_depth - self.depth)
+
+        return indent + self.log_url
 
     def get_print_output(self):
+        indent = tab * (total_depth - self.depth)
+
         if self.log_entry is not None:
-            return self.indent + self.log_url + ' | ' + self.log_entry
+            return indent + self.log_url + ' | ' + self.log_entry
 
-        return self.indent + self.log_url
-
-    def set_soup(self):
-        if self.soup is None:
-            code = ''
-
-            try:  # Read and store code for parsing
-                code = request.urlopen(self.url).read()
-            except Exception as exception:
-                write_log(DebugError(code_unable_to_crawl,
-                                     'Unable to crawl',
-                                     self.url,
-                                     exception,
-                                     traceback.format_exc()
-                                     ))
-
-            self.soup = BeautifulSoup(code, features='lxml')
+        return indent + self.log_url
 
 
 def crawl(current_url, current_depth):
     current_url = get_rebuilt_link(current_url)
-    has_crawled = get_check_link(current_url) in url_dict
+    current_check_link = get_check_link(current_url)
+    has_crawled = current_check_link in url_dict
 
     if current_depth > 0 and not has_crawled:
-        current_crawl_job = URL(current_url, current_depth)
-        current_crawl_job.set_soup()
-        url_dict[get_check_link(current_crawl_job.url)] = current_crawl_job
+        current_soup = get_soup(current_url)
+        current_crawl_job = URL(current_url, current_depth, None, current_soup)
+        url_dict[current_check_link] = deepcopy(current_crawl_job)
         has_qualified_attributes = False
 
         if (is_beta_url(current_crawl_job.url, current_crawl_job.depth)
@@ -220,7 +213,7 @@ def crawl(current_url, current_depth):
 
         write_log(current_crawl_job)
 
-        for tag in get_tag_list(current_crawl_job.url, current_crawl_job.soup):
+        for tag in get_tag_list(current_crawl_job.url, current_soup):
             parsed_url = get_parsed_attribute(current_crawl_job.url, tag)
 
             if parsed_url is not None:
@@ -241,6 +234,7 @@ def crawl(current_url, current_depth):
                 continue
 
             bare_parsed_url = get_stripped_url(parsed_url)
+
             if (current_depth > 1
                     and is_qualified_crawl_url(parsed_url)
                     and bare_parsed_url.startswith(og_url_domain)
@@ -256,13 +250,15 @@ def crawl(current_url, current_depth):
                 elif is_qualified_phone(parsed_url):
                     write_log(Phone(parsed_url))
 
-        # lastCrawledUrlAtDepth[current_depth] = current_url
+        # Update global parsed_list with final results
+        url_dict[current_check_link].parsed_list = (
+            current_crawl_job.parsed_list)  # Shallow copy
 
         if not has_qualified_attributes:
             debug_header = 'No attributes detected'
             debug_subheader = ('The tags were parsed from the URL, ' +
                                'but no qualified attributes were detected')
-            debug_body = '**SOURCE**\n\n' + str(current_crawl_job.soup)
+            debug_body = 'SOURCE:\n\n' + str(current_crawl_job.source)
 
             write_log(DebugInfo(current_crawl_job.url,
                                 debug_header,
@@ -270,10 +266,9 @@ def crawl(current_url, current_depth):
                                 debug_body))
 
     elif current_depth > 0:  # URL has already been crawled, get the result
-        current_check_link = get_check_link(current_url)
         is_relog = is_qualified_relog(current_url, current_depth)
 
-        current_relog_job = url_dict[current_check_link]
+        current_relog_job = deepcopy(url_dict[current_check_link])
         current_relog_job.depth = current_depth
         current_relog_job.log_entry = "Already crawled"
 
@@ -305,13 +300,16 @@ def crawl(current_url, current_depth):
 
 
 def get_check_link(url):  # Return uniform link so links don't get added twice
-    if get_prefix(url).startswith('http'):
-        return 'http://' + get_stripped_url(url)
+    prefix = get_prefix(url)
+    url = get_stripped_url(url)
 
-    elif get_prefix(url).startswith('ftp'):
-        return 'ftp://' + get_stripped_url(url)
+    if prefix.startswith('http'):
+        return 'http://' + url
 
-    return get_stripped_url(url)  # Used if get_prefix() returns ''
+    elif prefix.startswith('ftp'):
+        return 'ftp://' + url
+
+    return url  # Used if get_prefix() returns ''
 
 
 def get_domain(url):  # Return domain only of passed URL
@@ -421,7 +419,18 @@ def get_prefix(url):  # Return prefix only of passed URL
 def get_rebuilt_link(url):
     # Ensure that link can be crawled (i.e. replace '//' with 'http://')
     # while preserving the existing prefix if it has one
-    return get_prefix(url) + get_stripped_url(url)
+    check_url = get_stripped_url(url)
+    slash_index = check_url.rfind('/')
+    check_end_path = ''
+
+    if (slash_index + 1 < len(check_url)):
+        check_end_path = check_url[slash_index + 1:]
+
+    if check_end_path.startswith('#'):
+        id_index = url.rfind(check_end_path)
+        url = url[:id_index]  # If it's an ID i.e. '#content'
+
+    return (get_prefix(url) + get_stripped_url(url)).replace(' ', '')
 
 
 def get_stripped_email(email):  # Return raw email
@@ -442,6 +451,26 @@ def get_stripped_phone(phone):  # Return raw phone
         phone = phone.replace(u, '')
 
     return phone
+
+
+def get_soup(url):
+    url = get_rebuilt_link(url)
+    code = None
+
+    try:  # Read and store code for parsing
+        code = request.urlopen(url).read()
+    except Exception as exception:
+        write_log(DebugError(code_unable_to_crawl,
+                             'Unable to crawl',
+                             url,
+                             exception,
+                             traceback.format_exc()
+                             ))
+
+    if code is None:
+        code = ''
+
+    return BeautifulSoup(code, features='lxml')
 
 
 def get_stripped_url(url):  # Returns the bare URL
@@ -477,7 +506,7 @@ def get_tag_list(url, soup):  # Return a list of links
     if len(tag_list) == 0:
         debug_header = 'No tags detected'
         debug_subheader = 'The URL was parsed, but no tags were detected'
-        debug_body = '**SOURCE**\n\n' + str(soup)
+        debug_body = 'SOURCE:\n\n' + str(soup)
 
         write_log(DebugInfo(url, debug_header, debug_subheader, debug_body))
 
@@ -512,7 +541,7 @@ def is_html_parse(url):
 
 def is_qualified_crawl_url(url):
     # Return boolean on whether the passed URL is crawlable or not
-    # (i.e. not a mailto: or .mp3 file) TODO: Refactor this?
+    # (i.e. not a mailto: or .mp3 file)
     check_url = get_stripped_url(url)
 
     if check_url.endswith('..'):  # Back links
@@ -689,7 +718,10 @@ while True:
     if log_level == '':
         log_level = 1
 
-    log_level = int(log_level)
+    try:
+        log_level = int(log_level)
+    except Exception:
+        log_level = None
 
     if is_qualified_input(total_depth, scrape, save, relog, log_level):
         break
@@ -716,6 +748,18 @@ if save:
 
 # Begin crawling/scraping
 start_time = datetime.now()
+debug_header = 'Starting crawl job'
+debug_subheader = 'START: ' + str(datetime.utcnow()) + ' UTC'
+debug_body = ('CONFIG:' +
+              '\ntotal_depth = ' + str(total_depth) +
+              '\nscrape = ' + str(scrape) +
+              '\nsave = ' + str(save) +
+              '\nrelog = ' + str(relog) +
+              '\nlog_level = ' + str(log_level) +
+              '\nurl_input_list =' +
+              '\n' + tab + ('\n' + tab).join(map(str, url_input_list)))
+
+write_log(DebugInfo(None, debug_header, debug_subheader, debug_body))
 
 for link in url_input_list:  # Crawl for each URL the user inputs
     og_url = link
