@@ -53,6 +53,8 @@ code_too_many_back_links = 1
 url_dict = {}  # Checklink is key, URL class is value
 email_list = []
 phone_list = []
+prefix_cache_dict = {}  # Key = URL, value = prefix
+url_log_list = []  # Used for seeing if URL has been logged yet
 
 # Blanks
 error_count = 0
@@ -183,12 +185,18 @@ class URL:
         self.parsed_list = []
 
     def get_log_output(self):
-        indent = tab * (total_depth - self.depth)
+        if redundancy_level != 0:
+            indent = tab * (total_depth - self.depth)
+        else:
+            indent = ''
 
         return indent + self.log_url
 
     def get_print_output(self):
-        indent = tab * (total_depth - self.depth)
+        if redundancy_level != 0:
+            indent = tab * (total_depth - self.depth)
+        else:
+            indent = ''
 
         if self.log_entry is not None:
             return indent + self.log_url + ' | ' + self.log_entry
@@ -203,18 +211,19 @@ def crawl(current_url, current_depth):
 
     if current_depth > 0 and not has_crawled:
         current_soup = get_soup(current_url)
-        current_crawl_job = URL(current_url, current_depth, None, current_soup)
-        url_dict[current_check_link] = deepcopy(current_crawl_job)
+        url_class = URL(current_url, current_depth, None, current_soup)
+        current_crawl_job, url_dict[current_check_link] = url_class, url_class
         has_qualified_attributes = False
+        tag_list = get_tag_list(current_url, current_soup)
 
-        if (is_beta_url(current_crawl_job.url, current_crawl_job.depth)
-                and is_qualified_crawl_url(current_crawl_job.url)):
+        if (is_beta_url(current_url, current_depth)
+                and is_qualified_crawl_url(current_url)):
             current_crawl_job.log_entry = 'Crawling...'
 
         write_log(current_crawl_job)
 
-        for tag in get_tag_list(current_crawl_job.url, current_soup):
-            parsed_url = get_parsed_attribute(current_crawl_job.url, tag)
+        for tag in tag_list:  # Update parsed lists before crawling them
+            parsed_url = get_parsed_attribute(current_url, tag)
 
             if parsed_url is not None:
                 has_qualified_attributes = True
@@ -226,13 +235,18 @@ def crawl(current_url, current_depth):
             if (not has_prefix(parsed_url)
                     and not is_qualified_email(parsed_url)
                     and not is_qualified_phone(parsed_url)):
-                parsed_url = get_merged_url(current_crawl_job.url, parsed_url)
+                parsed_url = get_merged_url(current_url, parsed_url)
 
+            # Add to URL class for preserving tree structure
             if parsed_url not in current_crawl_job.parsed_list:
                 current_crawl_job.parsed_list.append(parsed_url)
             else:
                 continue
 
+        url_dict[current_check_link].parsed_list = deepcopy(
+            current_crawl_job.parsed_list)
+
+        for parsed_url in current_crawl_job.parsed_list:  # Crawl parsed lists
             bare_parsed_url = get_stripped_url(parsed_url)
 
             if (current_depth > 1
@@ -250,10 +264,6 @@ def crawl(current_url, current_depth):
                 elif is_qualified_phone(parsed_url):
                     write_log(Phone(parsed_url))
 
-        # Update global parsed_list with final results
-        url_dict[current_check_link].parsed_list = (
-            current_crawl_job.parsed_list)  # Shallow copy
-
         if not has_qualified_attributes:
             debug_header = 'No attributes detected'
             debug_subheader = ('The tags were parsed from the URL, ' +
@@ -264,21 +274,21 @@ def crawl(current_url, current_depth):
                                 debug_header,
                                 debug_subheader,
                                 debug_body))
-
     elif current_depth > 0:  # URL has already been crawled, get the result
-        is_relog = is_qualified_relog(current_url, current_depth)
+        is_higher_depth = (
+            current_depth > url_dict[get_check_link(current_url)].depth)
 
-        current_relog_job = deepcopy(url_dict[current_check_link])
-        current_relog_job.depth = current_depth
-        current_relog_job.log_entry = "Already crawled"
+        # If current_depth is greater than when we last crawled this URL,
+        # update the depth so we don't recrawl at anything equal to or less
+        if (is_higher_depth):
+            url_dict[current_check_link].depth = current_depth
 
-        write_log(current_relog_job)
+        if is_higher_depth or redundancy_level == 2:
+            current_relog_job = deepcopy(url_dict[current_check_link])
+            current_relog_job.depth = current_depth
+            current_relog_job.log_entry = 'Already crawled'
 
-        if is_relog:
-            # If current_depth is greater than when we last crawled this URL,
-            # update the depth so we don't recrawl at anything equal to or less
-            if (current_depth > url_dict[current_check_link].depth):
-                url_dict[current_check_link].depth = current_depth
+            write_log(current_relog_job)
 
             for item in current_relog_job.parsed_list:
                 bare_item_url = get_stripped_url(item)
@@ -399,37 +409,32 @@ def get_parsed_attribute(parent_url, tag):
 
 
 def get_prefix(url):  # Return prefix only of passed URL
+    prefix = ''
+
     if is_qualified_email(url) or is_qualified_phone(url):
-        return ''
+        return prefix
+
+    if url in prefix_cache_dict:
+        return prefix_cache_dict[url]
 
     if '//' in url and not url.startswith('//'):
         index = url.find('//') + 2
+        prefix = url[:index]
+    else:
+        prefix = 'http://'  # Default to this prefix if none is included
+        debug_header = 'Prefix not detected'
+        debug_subheader = (
+            'The passed URL was scanned, but no prefix was detected')
+        debug_body = 'Location: get_prefix()\nResult: Returning \'http://\''
 
-        return url[:index]
+        write_log(DebugInfo(url, debug_header, debug_subheader, debug_body))
 
-    debug_header = 'Prefix not detected'
-    debug_subheader = 'The passed URL was scanned, but no prefix was detected'
-    debug_body = 'Location: get_prefix()\nResult: Returning \'http://\''
+    prefix_cache_dict[url] = prefix
 
-    write_log(DebugInfo(url, debug_header, debug_subheader, debug_body))
-
-    return 'http://'  # Default to this prefix if none is included
+    return prefix
 
 
 def get_rebuilt_link(url):
-    # Ensure that link can be crawled (i.e. replace '//' with 'http://')
-    # while preserving the existing prefix if it has one
-    check_url = get_stripped_url(url)
-    slash_index = check_url.rfind('/')
-    check_end_path = ''
-
-    if (slash_index + 1 < len(check_url)):
-        check_end_path = check_url[slash_index + 1:]
-
-    if check_end_path.startswith('#'):
-        id_index = url.rfind(check_end_path)
-        url = url[:id_index]  # If it's an ID i.e. '#content'
-
     return (get_prefix(url) + get_stripped_url(url)).replace(' ', '')
 
 
@@ -476,6 +481,7 @@ def get_soup(url):
 def get_stripped_url(url):  # Returns the bare URL
     # Remove http, https, www, etc.
     # (i.e. 'example.org' instead of 'http://www.example.org')
+    check_end_path = ''
     str_to_remove = ['http://', 'https://', 'ftp://', 'ftps://', 'www.', ' ']
 
     for u in str_to_remove:
@@ -486,6 +492,15 @@ def get_stripped_url(url):  # Returns the bare URL
 
     if url.endswith('/'):
         url = url[:-1]
+
+    slash_index = url.rfind('/')
+
+    if (slash_index + 1 < len(url)):
+        check_end_path = url[slash_index:]
+
+    if check_end_path.startswith('/#'):
+        id_index = url.rfind(check_end_path)
+        url = url[:id_index]  # If it's an ID i.e. '/#content'
 
     return url
 
@@ -579,8 +594,9 @@ def is_qualified_email(url):
     return False
 
 
-def is_qualified_input(depth, scrape, save, relog, log_level):
-    binary_input_checklist = [scrape, save, relog]
+def is_qualified_input(
+        depth, is_scrape_mode, is_save_mode, redundancy_level, print_level):
+    binary_input_checklist = [is_scrape_mode, is_save_mode]
     is_binary_input = True
     is_display_level = True
 
@@ -588,7 +604,14 @@ def is_qualified_input(depth, scrape, save, relog, log_level):
         if not u.lower().startswith('y') and not u.lower().startswith('n'):
             is_binary_input = False
 
-    if not isinstance(log_level, int) or log_level < 0 or log_level > 2:
+    if (not isinstance(print_level, int)
+            or print_level < 0
+            or print_level > 2):
+        is_display_level = False
+
+    if (not isinstance(redundancy_level, int)
+            or redundancy_level < 0
+            or redundancy_level > 2):
         is_display_level = False
 
     return isinstance(depth, int) and is_binary_input and is_display_level
@@ -597,15 +620,6 @@ def is_qualified_input(depth, scrape, save, relog, log_level):
 def is_qualified_phone(url):
     # Return boolean on whether the passed item is a valid phone number or not
     if url.startswith('tel:') and url != 'tel:':
-        return True
-
-    return False
-
-
-def is_qualified_relog(url, current_depth):
-    # If depth is greater than when previously crawled,
-    # there is more to be discovered, hence the recrawl.
-    if relog or current_depth > url_dict[get_check_link(url)].depth:
         return True
 
     return False
@@ -625,41 +639,57 @@ def is_web_file(url):
 
 def write_log(entry):
     if type(entry) is DebugError:
-        if log_level > 0:
+        if print_level > 0:
             print(entry.get_print_output())
 
         debug_log.write(entry.get_log_output())
     elif type(entry) is DebugInfo:
-        if log_level > 1:
+        if print_level > 1:
             print(entry.get_print_output())
 
         debug_log.write(entry.get_log_output())
     elif type(entry) is URL:
-        # log_level
-        switch = {0: False,
-                  1: is_beta_url(entry.url, entry.depth),
-                  2: True,
-                  }
+        is_qualified_log = False
+        is_qualified_print = False
+        is_unique = False
 
-        if switch[log_level]:
+        # print_level
+        is_qualified_print_level = {
+            0: False,
+            1: is_beta_url(entry.url, entry.depth),
+            2: True}
+
+        if get_check_link(entry.url) not in url_log_list:
+            is_unique = True
+            url_log_list.append(get_check_link(entry.url))
+
+        if redundancy_level == 0:
+            is_qualified_log = is_save_mode and is_unique
+            is_qualified_print = (
+                is_qualified_print_level[print_level] and is_unique)
+        else:
+            is_qualified_log = is_save_mode
+            is_qualified_print = is_qualified_print_level[print_level]
+
+        if is_qualified_print:
             # If it's a root URL that it's going to crawl,
             # or full logging is enabled
             print(entry.get_print_output())
 
-        if save:
+        if is_qualified_log:
             url_log.write(entry.get_log_output() + '\n')
     elif type(entry) is Email:
-        if scrape and entry.email not in email_list:
+        if is_scrape_mode and entry.email not in email_list:
             email_list.append(entry.get_print_output())
 
-            if save:
+            if is_save_mode:
                 email_log.write(entry.get_log_output() + '\n')
 
     elif type(entry) is Phone:
-        if scrape and (entry.phone not in phone_list):
+        if is_scrape_mode and (entry.phone not in phone_list):
             phone_list.append(entry.get_print_output())
 
-            if save:
+            if is_save_mode:
                 phone_log.write(entry.get_log_output() + '\n')
 
 
@@ -670,77 +700,81 @@ url_input_list = input(
     '\nPlease enter the target URL(s), separated by spaces:\n').split(' ')
 
 while True:
-    try:
-        total_depth = int(input(
-            '\nPlease enter how many levels deep the crawler should go:\n'))
-    except Exception:
-        total_depth = None
+    total_depth = input(
+        '\nPlease enter how many levels deep the crawler should go:\n')
 
-    scrape = input(
+    is_scrape_mode = input(
         '\n' +
         'Do you want to scrape for emails and phone numbers?\n' +
         'y: yes (Default)\n' +
-        'n: no\n'
-        )
+        'n: no\n')
 
-    if scrape == '':
-        scrape = 'y'
+    if is_scrape_mode == '':
+        is_scrape_mode = 'y'
 
-    save = input(
+    is_save_mode = input(
         '\n' +
         'Would you like to save all data to files in the /logs folder?\n' +
         'y: yes (Default)\n' +
-        'n: no\n'
-        )
+        'n: no\n')
 
-    if save == '':
-        save = 'y'
+    if is_save_mode == '':
+        is_save_mode = 'y'
 
-    relog = input(
+    redundancy_level = input(
         '\n' +
-        'Would you like to log redundant URLs?\n' +
-        'Doing so increases overall crawling duration.\n' +
-        'y: yes\n' +
-        'n: no (Default)\n'
-        )
+        'Please select a level of redundancy:\n' +
+        ' Unique will log each URL in a list once and only once.\n' +
+        ' Standard will log a tree while skipping already crawled URLs.\n' +
+        ' Redundant will log the full tree including already crawled URLs.\n' +
+        '0: Unique (Default)\n' +
+        '1: Standard\n' +
+        '2: Redundant\n')
 
-    if relog == '':
-        relog = 'n'
+    if redundancy_level == '':
+        redundancy_level = 0
 
-    log_level = input(
+    print_level = input(
         '\n' +
-        'Please select a logging display option:\n' +
+        'Please select an output display option:\n' +
         '0: Quiet\n' +
         '1: Standard (Default)\n' +
-        '2: Verbose\n'
-        )
+        '2: Verbose\n')
 
-    if log_level == '':
-        log_level = 1
+    if print_level == '':
+        print_level = 1
 
     try:
-        log_level = int(log_level)
+        total_depth = int(total_depth)
+        redundancy_level = int(redundancy_level)
+        print_level = int(print_level)
     except Exception:
-        log_level = None
+        total_depth = None
+        redundancy_level = None
+        print_level = None
 
-    if is_qualified_input(total_depth, scrape, save, relog, log_level):
+    if is_qualified_input(
+            total_depth,
+            is_scrape_mode,
+            is_save_mode,
+            redundancy_level,
+            print_level):
         break
     else:
         print("\n***\nINVALID INPUT\n***\n")
 
-scrape = scrape.lower().startswith('y')
-save = save.lower().startswith('y')
-relog = relog.lower().startswith('y')
+is_scrape_mode = is_scrape_mode.lower().startswith('y')
+is_save_mode = is_save_mode.lower().startswith('y')
 
 # Open log files if applicable
 debug_log = open(debug_log_path, 'w+')
 debug_log.write('JobID: ' + job_id + '\n\n')
 
-if save:
+if is_save_mode:
     url_log = open(url_log_path, 'w+')
     url_log.write('JobID: ' + job_id + '\n\n')
 
-    if scrape:
+    if is_scrape_mode:
         email_log = open(email_log_path, 'w+')
         email_log.write('JobID: ' + job_id + '\n\n')
         phone_log = open(phone_log_path, 'w+')
@@ -752,10 +786,10 @@ debug_header = 'Starting crawl job'
 debug_subheader = 'START: ' + str(datetime.utcnow()) + ' UTC'
 debug_body = ('CONFIG:' +
               '\ntotal_depth = ' + str(total_depth) +
-              '\nscrape = ' + str(scrape) +
-              '\nsave = ' + str(save) +
-              '\nrelog = ' + str(relog) +
-              '\nlog_level = ' + str(log_level) +
+              '\nscrape = ' + str(is_scrape_mode) +
+              '\nsave = ' + str(is_save_mode) +
+              '\nredundancy_level = ' + str(redundancy_level) +
+              '\nprint_level = ' + str(print_level) +
               '\nurl_input_list =' +
               '\n' + tab + ('\n' + tab).join(map(str, url_input_list)))
 
@@ -767,11 +801,11 @@ for link in url_input_list:  # Crawl for each URL the user inputs
 
     crawl(link, total_depth)
 
-    if save:
+    if is_save_mode:
         url_log.write('END CRAWL: ' + link + '\n\n')
 
-if log_level > 0:
-    if scrape:
+if print_level > 0:
+    if is_scrape_mode:
         print('\n\nEmails:')
         print('\n'.join(map(str, email_list)))
 
