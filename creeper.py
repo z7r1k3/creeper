@@ -12,12 +12,14 @@ import uuid
 
 # Config Lists
 default_log_path = 'logs/'  # Make sure to put a '/' at the end
+
 disqualify_beginnings = ['mailto:',
                          'tel:'
                          ]  # Do not consider URL for crawling
 disqualify_endings = ['/LICENSE']  # Do NOT put '/' at the end
 disqualify_url = [None,
                   '#']
+
 qualify_attributes = ['href',
                       'src'
                       ]  # Determines attributes checked from tags
@@ -35,38 +37,57 @@ qualify_tags = ['a',
                 'script'
                 ]  # Determines tags parsed
 
+
 # Logging
 debug_log_divider = '=================================================='
 tab = '    '
+
 job_id = str(uuid.uuid4())
 timestamp = datetime.now().strftime('%Y-%m-%d-%H-%M-%S')
+
 debug_log_path = default_log_path + '1-debug/' + 'debug_' + timestamp + '.txt'
 url_log_path = default_log_path + '2-url/' + 'url_' + timestamp + '.txt'
 email_log_path = default_log_path + '3-email/' + 'email_' + timestamp + '.txt'
 phone_log_path = default_log_path + '4-phone/' + 'phone_' + timestamp + '.txt'
 
+
+# Defaults
+is_scrape_mode = True
+is_save_mode = True
+print_level = 1
+redundancy_level = 0
+total_depth = 4
+
+timeout = 20
+
+
 # Error Codes
 code_unable_to_crawl = 0
 code_too_many_back_links = 1
+
 
 # Storage Lists/Dicts
 url_dict = {}  # Checklink is key, URL class is value
 email_list = []
 phone_list = []
+
 prefix_cache_dict = {}  # Key = URL, value = prefix
 url_log_list = []  # Used for seeing if URL has been logged yet
 
+
 # Blanks
-error_count = 0
 debug_count = 0
+error_count = 0
+
 job_stats = ''
 og_url = ''
 og_url_domain = ''
-start_time = None
-total_depth = 0
-url_log = None
+
 email_log = None
+url_input_list = None
+url_log = None
 phone_log = None
+start_time = None
 
 
 class DebugError:
@@ -463,7 +484,7 @@ def get_soup(url):
     code = None
 
     try:  # Read and store code for parsing
-        code = request.urlopen(url).read()
+        code = request.urlopen(url, timeout=timeout).read()
     except Exception as exception:
         write_log(DebugError(code_unable_to_crawl,
                              'Unable to crawl',
@@ -594,29 +615,6 @@ def is_qualified_email(url):
     return False
 
 
-def is_qualified_input(
-        depth, is_scrape_mode, is_save_mode, redundancy_level, print_level):
-    binary_input_checklist = [is_scrape_mode, is_save_mode]
-    is_binary_input = True
-    is_display_level = True
-
-    for u in binary_input_checklist:
-        if not u.lower().startswith('y') and not u.lower().startswith('n'):
-            is_binary_input = False
-
-    if (not isinstance(print_level, int)
-            or print_level < 0
-            or print_level > 2):
-        is_display_level = False
-
-    if (not isinstance(redundancy_level, int)
-            or redundancy_level < 0
-            or redundancy_level > 2):
-        is_display_level = False
-
-    return isinstance(depth, int) and is_binary_input and is_display_level
-
-
 def is_qualified_phone(url):
     # Return boolean on whether the passed item is a valid phone number or not
     if url.startswith('tel:') and url != 'tel:':
@@ -638,12 +636,7 @@ def is_web_file(url):
 
 
 def write_log(entry):
-    if type(entry) is DebugError:
-        if print_level > 0:
-            print(entry.get_print_output())
-
-        debug_log.write(entry.get_log_output())
-    elif type(entry) is DebugInfo:
+    if type(entry) is DebugError or type(entry) is DebugInfo:
         if print_level > 1:
             print(entry.get_print_output())
 
@@ -653,23 +646,16 @@ def write_log(entry):
         is_qualified_print = False
         is_unique = False
 
-        # print_level
-        is_qualified_print_level = {
-            0: False,
-            1: is_beta_url(entry.url, entry.depth),
-            2: True}
-
         if get_check_link(entry.url) not in url_log_list:
             is_unique = True
             url_log_list.append(get_check_link(entry.url))
 
         if redundancy_level == 0:
             is_qualified_log = is_save_mode and is_unique
-            is_qualified_print = (
-                is_qualified_print_level[print_level] and is_unique)
+            is_qualified_print = print_level > 0 and is_unique
         else:
             is_qualified_log = is_save_mode
-            is_qualified_print = is_qualified_print_level[print_level]
+            is_qualified_print = print_level > 0
 
         if is_qualified_print:
             # If it's a root URL that it's going to crawl,
@@ -696,32 +682,69 @@ def write_log(entry):
 # START MAIN CODE
 
 # Get user variables
-url_input_list = input(
-    '\nPlease enter the target URL(s), separated by spaces:\n').split(' ')
+while True:
+    url_input_list = input(
+        '\nPlease enter the target URL(s), separated by spaces:\n').split(' ')
+
+    if url_input_list == ['']:
+        print("\n***\nINVALID INPUT\n***\n")
+        continue
+    break
 
 while True:
-    total_depth = input(
-        '\nPlease enter how many levels deep the crawler should go:\n')
+    total_depth_input = input(
+        '\nPlease enter how many levels deep to crawl (default = 4):\n')
 
-    is_scrape_mode = input(
+    if total_depth_input == '':
+        break
+    else:
+        try:
+            if int(total_depth_input) > 0:
+                total_depth = int(total_depth_input)
+                break
+            else:
+                print("\n***\nINVALID INPUT\n***\n")
+                continue
+        except Exception:
+            print("\n***\nINVALID INPUT\n***\n")
+            continue
+
+while True:
+    scrape_mode_input = input(
         '\n' +
         'Do you want to scrape for emails and phone numbers?\n' +
         'y: yes (Default)\n' +
         'n: no\n')
 
-    if is_scrape_mode == '':
-        is_scrape_mode = 'y'
+    if scrape_mode_input == '':
+        break
+    elif (scrape_mode_input.lower().startswith('y') or
+            scrape_mode_input.lower().startswith('n')):
+        is_scrape_mode = scrape_mode_input.lower().startswith('y')
+        break
+    else:
+        print("\n***\nINVALID INPUT\n***\n")
+        continue
 
-    is_save_mode = input(
+while True:
+    save_mode_input = input(
         '\n' +
         'Would you like to save all data to files in the /logs folder?\n' +
         'y: yes (Default)\n' +
         'n: no\n')
 
-    if is_save_mode == '':
-        is_save_mode = 'y'
+    if save_mode_input == '':
+        break
+    elif (save_mode_input.lower().startswith('y') or
+            save_mode_input.lower().startswith('n')):
+        is_save_mode = save_mode_input.lower().startswith('y')
+        break
+    else:
+        print("\n***\nINVALID INPUT\n***\n")
+        continue
 
-    redundancy_level = input(
+while True:
+    redundancy_level_input = input(
         '\n' +
         'Please select a level of redundancy:\n' +
         ' Unique will log each URL in a list once and only once.\n' +
@@ -731,40 +754,44 @@ while True:
         '1: Standard\n' +
         '2: Redundant\n')
 
-    if redundancy_level == '':
-        redundancy_level = 0
+    if redundancy_level_input == '':
+        break
+    else:
+        try:
+            if (int(redundancy_level_input) >= 0 and
+                    int(redundancy_level_input) <= 2):
+                redundancy_level = int(redundancy_level_input)
+                break
+            else:
+                print("\n***\nINVALID INPUT\n***\n")
+                continue
+        except Exception:
+            print("\n***\nINVALID INPUT\n***\n")
+            continue
 
-    print_level = input(
+while True:
+    print_level_input = input(
         '\n' +
         'Please select an output display option:\n' +
         '0: Quiet\n' +
         '1: Standard (Default)\n' +
         '2: Verbose\n')
 
-    if print_level == '':
-        print_level = 1
-
-    try:
-        total_depth = int(total_depth)
-        redundancy_level = int(redundancy_level)
-        print_level = int(print_level)
-    except Exception:
-        total_depth = None
-        redundancy_level = None
-        print_level = None
-
-    if is_qualified_input(
-            total_depth,
-            is_scrape_mode,
-            is_save_mode,
-            redundancy_level,
-            print_level):
+    if print_level_input == '':
         break
     else:
-        print("\n***\nINVALID INPUT\n***\n")
+        try:
+            if (int(print_level_input) >= 0 and
+                    int(print_level_input) <= 2):
+                print_level = int(print_level_input)
+                break
+            else:
+                print("\n***\nINVALID INPUT\n***\n")
+                continue
+        except Exception:
+            print("\n***\nINVALID INPUT\n***\n")
+            continue
 
-is_scrape_mode = is_scrape_mode.lower().startswith('y')
-is_save_mode = is_save_mode.lower().startswith('y')
 
 # Open log files if applicable
 debug_log = open(debug_log_path, 'w+')
