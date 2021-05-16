@@ -56,7 +56,7 @@ is_scrape_mode = True
 is_save_mode = True
 print_level = 1
 redundancy_level = 0
-total_depth = 4
+total_depth = 3
 
 timeout = 20
 
@@ -237,8 +237,7 @@ def crawl(current_url, current_depth):
         has_qualified_attributes = False
         tag_list = get_tag_list(current_url, current_soup)
 
-        if (is_beta_url(current_url, current_depth)
-                and is_qualified_crawl_url(current_url)):
+        if (current_depth > 0 and is_qualified_crawl_url(current_url)):
             current_crawl_job.log_entry = 'Crawling...'
 
         write_log(current_crawl_job)
@@ -553,13 +552,6 @@ def has_prefix(url):
     return '://' in url or url.startswith('//')
 
 
-def is_beta_url(url, depth):
-    # URLs that are both on the og domain,
-    # as well as at the second-highest depth or higher
-    # (beginning of the rabbit holes basically)
-    return total_depth <= (depth + 1)
-
-
 def is_ftp(url):
     if url.startswith('ftp://') or url.startswith('ftps://'):
         return True
@@ -693,7 +685,7 @@ while True:
 
 while True:
     total_depth_input = input(
-        '\nPlease enter how many levels deep to crawl (default = 4):\n')
+        '\nPlease enter how many levels deep to crawl (default = 3):\n')
 
     if total_depth_input == '':
         break
